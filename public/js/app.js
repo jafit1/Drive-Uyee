@@ -300,7 +300,7 @@ function applyServerCredentials() {
 
       // Prefill the storage chat id so the user doesn't retype what's already set.
       var chatInput = $('storage-chat-id');
-      if (chatInput && s.chatId && !chatInput.value) chatInput.value = s.chatId;
+      if (chatInput && s.chatId) chatInput.value = s.chatId;
     })
     .catch(function () { /* wizard still works with manual entry */ });
 }

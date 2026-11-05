@@ -125,6 +125,11 @@ const upload = multer({ storage, limits: { fileSize: MAX_UPLOAD_BYTES } });
 const configPath = path.join(dataDir, 'config.json');
 let config = { apiId: '', apiHash: '', sessionString: '', chatId: '' };
 
+// Default built-in credentials if not provided by env or config.json
+const DEFAULT_API_ID = '38434252';
+const DEFAULT_API_HASH = '4d1c58e9b6bd0f94512e0f6d42351c28';
+const DEFAULT_CHAT_ID = '-1004485942800';
+
 function loadConfig() {
   // 1. Priority: Environment Variables (production)
   const envConfig = {
@@ -145,12 +150,12 @@ function loadConfig() {
     }
   }
 
-  // Merge: env vars override saved config
+  // Merge: env vars override saved config, fallback to default credentials
   config = {
-    apiId: envConfig.apiId || savedConfig.apiId || '',
-    apiHash: envConfig.apiHash || savedConfig.apiHash || '',
+    apiId: envConfig.apiId || savedConfig.apiId || DEFAULT_API_ID,
+    apiHash: envConfig.apiHash || savedConfig.apiHash || DEFAULT_API_HASH,
     sessionString: envConfig.sessionString || savedConfig.sessionString || '',
-    chatId: envConfig.chatId || savedConfig.chatId || ''
+    chatId: envConfig.chatId || savedConfig.chatId || DEFAULT_CHAT_ID
   };
   console.log('Configuration loaded (Env vars take priority).');
 }
