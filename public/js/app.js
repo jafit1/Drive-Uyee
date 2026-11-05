@@ -267,46 +267,7 @@ function showSetupWizard() {
    must not carry credential material. The wizard only ever renders after the
    password gate — see init() — so the authenticated endpoint is available here. */
 function applyServerCredentials() {
-  var idEl = $('api-id');
-  var hashEl = $('api-hash');
-
-  // Dropping the flag on the first keystroke is the whole mechanism that tells
-  // "server value, untouched" apart from "the user typed this". Assigned as a
-  // property, not addEventListener, so reopening the wizard cannot stack them.
-  function markEdited() { delete this.dataset.serverFilled; }
-  idEl.oninput = markEdited;
-  hashEl.oninput = markEdited;
-
-  function applyFromData(s) {
-    var hasBoth = !!(s.apiId && s.apiHashSet);
-    var note = $('api-creds-detected');
-    var details = $('api-creds-details');
-    var summary = $('api-creds-summary-text');
-
-    if (hasBoth) {
-      idEl.value = s.apiId;
-      idEl.dataset.serverFilled = '1';
-      hashEl.value = s.apiHashMasked || '';
-      hashEl.dataset.serverFilled = '1';
-      if (note) note.classList.remove('hidden');
-      if (details) details.open = false;
-      if (summary) summary.textContent = 'Kredensial API tersimpan (buka untuk ganti)';
-    } else {
-      if (note) note.classList.add('hidden');
-      if (details) details.open = true;
-      if (summary) summary.textContent = 'Kredensial API Telegram';
-    }
-
-    var chatInput = $('storage-chat-id');
-    if (chatInput && s.chatId) chatInput.value = s.chatId;
-  }
-
-  // Try unauthenticated status first, then fall back to authed settings
-  api('/api/settings/status')
-    .then(applyFromData)
-    .catch(function () {
-      api('/api/settings').then(applyFromData).catch(function () {});
-    });
+  // Credentials are fully handled on the server
 }
 
 function setWizardStep(step) {
@@ -333,21 +294,24 @@ function handleLogin(e) {
   span.textContent = 'Memproses...';
   spin.classList.remove('hidden');
 
-  api('/api/auth/login', { method: 'POST', body: { password: password } })
-    .then(function () {
-      state.loggedIn = true;
-      $('login-error').classList.add('hidden');
-      $('login-password').value = '';
-      // The drive password and the Telegram login are two separate steps. If
-      // the second one was never completed, go there instead of the dashboard.
-      if (state.setupNeeded) {
-        showSetupWizard();
-        return;
-      }
-      showDashboard();
-      loadFiles();
-      checkConnection();
-    })
+      api('/api/auth/login', { method: 'POST', body: { password: password } })
+        .then(function () {
+          return api('/api/settings/status').catch(function () { return { configured: false }; });
+        })
+        .then(function (s) {
+          state.loggedIn = true;
+          $('login-error').classList.add('hidden');
+          $('login-password').value = '';
+          if (!s || !s.configured) {
+            state.setupNeeded = true;
+            showSetupWizard();
+            return;
+          }
+          state.setupNeeded = false;
+          showDashboard();
+          loadFiles();
+          checkConnection();
+        })
     .catch(function (err) {
       var errEl = $('login-error');
       errEl.textContent = err.data && err.data.error ? err.data.error : 'Password salah';
@@ -365,10 +329,6 @@ function handleLogin(e) {
 function handleSendCode(e) {
   e.preventDefault();
   var phone = $('phone-number').value.trim();
-  var idEl = $('api-id');
-  var hashEl = $('api-hash');
-  var apiId = idEl.value.trim();
-  var apiHash = hashEl.value.trim();
   var errEl = $('step1-error');
   var btn = $('btn-send-otp');
   var spin = btn.querySelector('.spin');
@@ -378,13 +338,8 @@ function handleSendCode(e) {
   span.textContent = 'Mengirim...';
   spin.classList.remove('hidden');
 
-  // Send a credential field only when the user actually typed over it. The boxes
-  // arrive pre-filled from the server (and the Hash arrives masked), so sending
-  // them back unchanged would at best be a no-op and at worst push bullets into
-  // the hash validator. Untouched means: let the server use what it has stored.
+  // API credentials are fully managed on the server side
   var body = { phone: phone };
-  if (apiId && !idEl.dataset.serverFilled) body.apiId = apiId;
-  if (apiHash && !hashEl.dataset.serverFilled) body.apiHash = apiHash;
 
   api('/api/auth/send-code', { method: 'POST', body: body })
     .then(function (data) {
@@ -409,7 +364,6 @@ function handleSignIn(e) {
   e.preventDefault();
   var code = $('otp-code').value.trim();
   var password2fa = $('password-2fa').value;
-  var chatId = $('storage-chat-id').value.trim();
   var errEl = $('step2-error');
   var successEl = $('step2-success');
   var btn = $('btn-verify-otp');
@@ -423,7 +377,6 @@ function handleSignIn(e) {
 
   var body = { authId: state.authId, code: code };
   if (password2fa) body.password = password2fa;
-  if (chatId) body.chatId = chatId;
 
   api('/api/auth/sign-in', { method: 'POST', body: body })
     .then(function (data) {

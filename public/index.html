@@ -86,36 +86,12 @@
       <form id="setup-form-step1" class="flex flex-col gap-5">
         <div class="flex flex-col gap-2">
           <label for="phone-number" class="field-label">Nomor Telepon</label>
-          <input type="tel" id="phone-number" value="+62" placeholder="+628123456789" class="input" required autocomplete="tel">
-          <span class="field-hint">Gunakan format internasional, contoh: +62812...</span>
+          <input type="tel" id="phone-number" value="+62" placeholder="+628123456789" class="input text-base py-3" required autocomplete="tel" autofocus>
+          <span class="field-hint">Gunakan format internasional dengan kode negara (+62).</span>
         </div>
-
-        <!-- Info Kredensial API Otomatis -->
-        <div id="api-creds-detected" class="note-success">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 shrink-0"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          <span>Kredensial API Telegram & Storage Chat ID sudah terpasang otomatis dari server.</span>
-        </div>
-
-        <details id="api-creds-details" class="disclosure">
-          <summary class="disclosure-summary">
-            <span id="api-creds-summary-text">Kredensial API Telegram (Terisi Otomatis)</span>
-            <svg class="disclosure-chevron" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-          </summary>
-          <div class="flex flex-col gap-4 mt-4">
-            <div class="flex flex-col gap-2">
-              <label for="api-id" class="field-label">API ID</label>
-              <input type="text" id="api-id" value="38434252" placeholder="38434252" class="input font-mono" autocomplete="off" inputmode="numeric">
-            </div>
-            <div class="flex flex-col gap-2">
-              <label for="api-hash" class="field-label">API Hash</label>
-              <input type="text" id="api-hash" value="4d1c58e9b6bd0f94512e0f6d42351c28" placeholder="4d1c58e9b6bd0f94512e0f6d42351c28" class="input font-mono" autocomplete="off">
-            </div>
-            <span class="field-hint">Kredensial bawaan akun Anda sudah terisi. Buka hanya jika ingin menggantinya.</span>
-          </div>
-        </details>
 
         <div id="step1-error" class="hidden note-error"></div>
-        <button type="submit" id="btn-send-otp" class="btn-primary w-full py-3">
+        <button type="submit" id="btn-send-otp" class="btn-primary w-full py-3.5 text-sm font-semibold shadow-md">
           <span>Kirim Kode OTP</span>
           <div class="loader loader-sm loader-5 spin hidden"><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span></div>
         </button>
@@ -125,23 +101,18 @@
       <form id="setup-form-step2" class="hidden flex flex-col gap-5">
         <div class="flex flex-col gap-2">
           <label for="otp-code" class="field-label">Kode OTP</label>
-          <input type="text" id="otp-code" placeholder="Masukkan kode dari Telegram" class="input input-otp" required autocomplete="one-time-code" inputmode="numeric">
-          <span class="field-hint">Kode dikirim lewat aplikasi Telegram, bukan SMS.</span>
+          <input type="text" id="otp-code" placeholder="12345" class="input input-otp text-lg tracking-widest font-mono" required autocomplete="one-time-code" inputmode="numeric">
+          <span class="field-hint">Kode dikirim ke aplikasi Telegram Anda.</span>
         </div>
         <div class="field hidden flex flex-col gap-2" id="field-2fa">
           <label for="password-2fa" class="field-label">Password 2FA</label>
           <input type="password" id="password-2fa" placeholder="Password Verifikasi 2 Langkah" class="input" autocomplete="off">
         </div>
-        <div class="flex flex-col gap-2">
-          <label for="storage-chat-id" class="field-label">Storage Chat ID <span class="badge-optional">opsional</span></label>
-          <input type="text" id="storage-chat-id" value="-1004485942800" placeholder="-1004485942800" class="input" autocomplete="off">
-          <span class="field-hint">ID grup/channel tujuan penyimpanan (default sudah terisi).</span>
-        </div>
         <div id="step2-error" class="hidden note-error"></div>
         <div id="step2-success" class="hidden note-success"></div>
         <div class="flex gap-3">
-          <button type="button" id="btn-back-step1" class="btn-ghost flex-1 py-2.5">Kembali</button>
-          <button type="submit" id="btn-verify-otp" class="btn-primary flex-1 py-2.5">
+          <button type="button" id="btn-back-step1" class="btn-ghost flex-1 py-3 text-sm">Kembali</button>
+          <button type="submit" id="btn-verify-otp" class="btn-primary flex-1 py-3 text-sm font-semibold shadow-md">
             <span>Masuk</span>
             <div class="loader loader-sm loader-5 spin hidden"><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span></div>
           </button>
