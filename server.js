@@ -1644,8 +1644,8 @@ app.get('/api/uploads', (req, res) => {
    hanya dipakai pada file <= THUMB_AUTO_BYTES. Thumbnail Telegram dicoba dulu. */
 const THUMB_AUTO_BYTES = Number(process.env.THUMB_AUTO_BYTES) || 4 * 1024 * 1024;
 const PREVIEW_COMPRESS_MAX_BYTES = Number(process.env.PREVIEW_COMPRESS_MAX_BYTES) || 4 * 1024 * 1024;
-const THUMB_CONCURRENCY = Math.max(1, Number(process.env.THUMB_CONCURRENCY) || 1);
-const THUMB_MISS_TTL_MS = 10 * 60 * 1000;   // how long "no thumbnail" is trusted
+const THUMB_CONCURRENCY = Math.max(1, Number(process.env.THUMB_CONCURRENCY) || 4);
+const THUMB_MISS_TTL_MS = 60 * 1000;   // how long "no thumbnail" is trusted before retry
 const BROWSER_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.bmp']);
 
 // fileKey -> when we last failed to produce a thumbnail. Without this, a file
@@ -1691,14 +1691,14 @@ function thumbContentType(filePath) {
 }
 
 function sendCachedThumb(res, filePath) {
-  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
   res.setHeader('Content-Type', thumbContentType(filePath));
   return sendCacheFile(res, filePath);
 }
 
 // Negative caching prevents repeated Telegram lookups for files with no thumb.
 function sendNoThumb(res) {
-  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.setHeader('Cache-Control', 'public, max-age=60');
   return res.status(404).end();
 }
 

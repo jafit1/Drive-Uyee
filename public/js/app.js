@@ -120,6 +120,21 @@ function shouldTryThumb(file, cat) {
 // in the generated utilities, so it wins until the class is removed and the
 // element then lays out as a centred flex box. Same idiom as the forms in
 // index.html.
+function handleThumbError(img) {
+  if (!img.dataset.retried) {
+    img.dataset.retried = '1';
+    setTimeout(function () {
+      img.src = img.src.split('?')[0] + '?r=' + Date.now();
+    }, 1500);
+    return;
+  }
+  img.classList.add('hidden');
+  if (img.parentElement) {
+    img.parentElement.classList.remove('is-loading');
+    if (img.nextElementSibling) img.nextElementSibling.classList.remove('hidden');
+  }
+}
+
 function thumbCell(file, cat, ext, wrapClass, iconColor) {
   var fallback = '<div class="thumb-fallback hidden flex w-full h-full flex-col items-center justify-center gap-1" style="color:' + iconColor + '">' +
     getFileIconSvg(cat, ext) + (ext ? '<span class="thumb-ext">' + escapeHtml(ext.slice(0, 6).toUpperCase()) + '</span>' : '') + '</div>';
@@ -132,10 +147,12 @@ function thumbCell(file, cat, ext, wrapClass, iconColor) {
   return '<div class="' + wrapClass + ' thumb-tile is-loading">' +
     '<div class="thumb-skeleton" aria-hidden="true"></div>' +
     '<img src="/api/thumb/' + encodeURIComponent(file.file_key) + '" class="thumb-image w-full h-full object-cover" alt="" loading="lazy" decoding="async" fetchpriority="low"' +
-    " onload=\"this.parentElement.classList.remove('is-loading')\" onerror=\"this.classList.add('hidden');this.parentElement.classList.remove('is-loading');this.nextElementSibling.classList.remove('hidden')\">" +
+    " onload=\"this.parentElement.classList.remove('is-loading')\" onerror=\"window._driveThumbErr(this)\">" +
     fallback +
     '</div>';
 }
+
+window._driveThumbErr = handleThumbError;
 
 var extColors = {
   pdf: '#d93025', doc: '#1a73e8', docx: '#1a73e8', xls: '#1e8e3e', xlsx: '#1e8e3e',
@@ -436,8 +453,37 @@ function handleSignIn(e) {
 /* ─────────────────────────────────────────────────────────────
    FILES
    ───────────────────────────────────────────────────────────── */
+var FILES_CACHE_KEY = 'drive-cached-files-v1';
+
+function getCachedFiles() {
+  try {
+    var raw = localStorage.getItem(FILES_CACHE_KEY);
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setCachedFiles(files) {
+  try {
+    localStorage.setItem(FILES_CACHE_KEY, JSON.stringify(files));
+  } catch (e) {}
+}
+
 function loadFiles() {
-  $('files-loading').classList.remove('hidden');
+  var cached = getCachedFiles();
+  if (cached && cached.length > 0 && state.files.length === 0) {
+    state.files = cached;
+    applyFilters();
+    updateStorageInfo();
+    // Do not show full-screen loading spinner if cached data is already rendered
+    $('files-loading').classList.add('hidden');
+  } else if (state.files.length === 0) {
+    $('files-loading').classList.remove('hidden');
+  }
+
   api('/api/files')
     .then(function (data) {
       // GET /api/files responds with a bare JSON array (server.js: res.json(
@@ -449,6 +495,7 @@ function loadFiles() {
       // one; the envelope branch is kept only so a future wrapped response
       // does not silently blank the grid again.
       state.files = Array.isArray(data) ? data : (data && data.files) || [];
+      setCachedFiles(state.files);
       applyFilters();
       updateStorageInfo();
     })
@@ -2296,6 +2343,14 @@ function init() {
   // teks bawaan di sidebar saat halaman dibuka.
   terapkanBrand();
   bindEvents();
+
+  // Optimistic preview if user already logged in previously
+  var cachedFiles = getCachedFiles();
+  if (cachedFiles && cachedFiles.length > 0) {
+    state.files = cachedFiles;
+    applyFilters();
+    updateStorageInfo();
+  }
 
   // Check auth status
   api('/api/auth/status')
