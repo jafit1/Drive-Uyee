@@ -277,32 +277,36 @@ function applyServerCredentials() {
   idEl.oninput = markEdited;
   hashEl.oninput = markEdited;
 
-  api('/api/settings')
-    .then(function (s) {
-      var hasBoth = !!(s.apiId && s.apiHashSet);
-      var note = $('api-creds-detected');
-      var details = $('api-creds-details');
-      var summary = $('api-creds-summary-text');
+  function applyFromData(s) {
+    var hasBoth = !!(s.apiId && s.apiHashSet);
+    var note = $('api-creds-detected');
+    var details = $('api-creds-details');
+    var summary = $('api-creds-summary-text');
 
-      if (hasBoth) {
-        idEl.value = s.apiId;
-        idEl.dataset.serverFilled = '1';
-        hashEl.value = s.apiHashMasked || '';
-        hashEl.dataset.serverFilled = '1';
-        note.classList.remove('hidden');
-        details.open = false;
-        summary.textContent = 'Kredensial API tersimpan (buka untuk ganti)';
-      } else {
-        note.classList.add('hidden');
-        details.open = true;
-        summary.textContent = 'Kredensial API Telegram';
-      }
+    if (hasBoth) {
+      idEl.value = s.apiId;
+      idEl.dataset.serverFilled = '1';
+      hashEl.value = s.apiHashMasked || '';
+      hashEl.dataset.serverFilled = '1';
+      if (note) note.classList.remove('hidden');
+      if (details) details.open = false;
+      if (summary) summary.textContent = 'Kredensial API tersimpan (buka untuk ganti)';
+    } else {
+      if (note) note.classList.add('hidden');
+      if (details) details.open = true;
+      if (summary) summary.textContent = 'Kredensial API Telegram';
+    }
 
-      // Prefill the storage chat id so the user doesn't retype what's already set.
-      var chatInput = $('storage-chat-id');
-      if (chatInput && s.chatId) chatInput.value = s.chatId;
-    })
-    .catch(function () { /* wizard still works with manual entry */ });
+    var chatInput = $('storage-chat-id');
+    if (chatInput && s.chatId) chatInput.value = s.chatId;
+  }
+
+  // Try unauthenticated status first, then fall back to authed settings
+  api('/api/settings/status')
+    .then(applyFromData)
+    .catch(function () {
+      api('/api/settings').then(applyFromData).catch(function () {});
+    });
 }
 
 function setWizardStep(step) {
@@ -620,7 +624,7 @@ function renderInBatches(files, container, token, renderItem) {
 function renderGrid(container, token) {
   renderInBatches(state.filteredFiles, container, token, function (file) {
     var card = document.createElement('div');
-    card.className = 'card p-3 flex flex-col gap-2 group relative cursor-pointer hover:shadow-md transition';
+    card.className = 'card p-3 flex flex-col gap-2 group relative cursor-pointer hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 border border-cloud';
     card.dataset.fileKey = file.file_key;
 
     var isSelected = state.selectedIds.has(file.file_key);
@@ -634,7 +638,7 @@ function renderGrid(container, token) {
     var iconColor = cat === 'image' ? '#1e8e3e' : cat === 'video' ? '#d93025' : cat === 'audio' ? '#a142f4' : getExtColor(ext);
     var iconHtml = thumbCell(
       file, cat, ext,
-      'aspect-square rounded-control overflow-hidden bg-paper border border-cloud flex items-center justify-center',
+      'aspect-square rounded-control overflow-hidden bg-paper border border-cloud flex items-center justify-center relative shadow-inner',
       iconColor
     );
 
@@ -652,10 +656,10 @@ function renderGrid(container, token) {
     card.innerHTML =
       checkboxHtml +
       iconHtml +
-      '<div class="min-w-0">' +
-      '<p class="text-xs font-medium truncate" title="' + name + '">' + name + '</p>' +
+      '<div class="min-w-0 pt-0.5">' +
+      '<p class="text-xs font-semibold truncate group-hover:text-primary transition-colors" title="' + name + '">' + name + '</p>' +
       '</div>' +
-      '<div class="flex items-center justify-between text-[10px] text-textGray font-mono">' +
+      '<div class="flex items-center justify-between text-[11px] text-textGray font-mono">' +
       '<span>' + size + '</span>' +
       '<span>' + date + '</span>' +
       '</div>';
@@ -677,13 +681,13 @@ function renderGrid(container, token) {
 function renderList(container, token) {
   renderInBatches(state.filteredFiles, container, token, function (file) {
     var row = document.createElement('div');
-    row.className = 'flex items-center gap-3 p-2.5 rounded-control hover:bg-paper cursor-pointer transition group';
+    row.className = 'flex items-center gap-3 p-3 rounded-control hover:bg-paper cursor-pointer transition-all border border-transparent hover:border-cloud group';
     row.dataset.fileKey = file.file_key;
 
     var isSelected = state.selectedIds.has(file.file_key);
     if (isSelected) {
       row.style.background = 'rgb(var(--c-accent) / 0.08)';
-      row.style.borderLeft = '2px solid rgb(var(--c-accent))';
+      row.style.borderLeft = '3px solid rgb(var(--c-accent))';
     }
 
     var cat = getFileCategory(file);
@@ -697,7 +701,7 @@ function renderList(container, token) {
 
     var iconHtml = thumbCell(
       file, cat, ext,
-      'w-10 h-10 rounded-control overflow-hidden bg-paper border border-cloud shrink-0 flex items-center justify-center',
+      'w-11 h-11 rounded-control overflow-hidden bg-paper border border-cloud shrink-0 flex items-center justify-center shadow-xs',
       iconColor
     );
 
@@ -709,10 +713,10 @@ function renderList(container, token) {
       checkboxHtml +
       iconHtml +
       '<div class="flex-1 min-w-0">' +
-      '<p class="text-sm font-medium truncate" title="' + name + '">' + name + '</p>' +
-      '<p class="text-[10px] text-textGray font-mono">' + date + '</p>' +
+      '<p class="text-sm font-semibold truncate group-hover:text-primary transition-colors" title="' + name + '">' + name + '</p>' +
+      '<p class="text-[11px] text-textGray font-mono">' + date + '</p>' +
       '</div>' +
-      '<span class="text-xs text-textGray font-mono shrink-0">' + size + '</span>' +
+      '<span class="text-xs font-semibold text-textGray font-mono shrink-0 px-2 py-1 rounded bg-paper border border-cloud">' + size + '</span>' +
       '<button class="btn-icon opacity-0 group-hover:opacity-100 transition shrink-0" style="width:2rem;height:2rem">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>' +
       '</button>';

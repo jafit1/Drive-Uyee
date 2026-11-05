@@ -90,28 +90,27 @@
           <span class="field-hint">Gunakan format internasional, contoh: +62812...</span>
         </div>
 
-        <!-- Shown when the server already holds API credentials (config.json / env),
-             so the user never has to retype them. -->
-        <div id="api-creds-detected" class="hidden note-success">
+        <!-- Info Kredensial API Otomatis -->
+        <div id="api-creds-detected" class="note-success">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4 shrink-0"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          <span>Kredensial API tersimpan permanen dan sudah terisi otomatis — biarkan apa adanya.</span>
+          <span>Kredensial API Telegram & Storage Chat ID sudah terpasang otomatis dari server.</span>
         </div>
 
         <details id="api-creds-details" class="disclosure">
           <summary class="disclosure-summary">
-            <span id="api-creds-summary-text">Kredensial API Telegram</span>
+            <span id="api-creds-summary-text">Kredensial API Telegram (Terisi Otomatis)</span>
             <svg class="disclosure-chevron" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </summary>
           <div class="flex flex-col gap-4 mt-4">
             <div class="flex flex-col gap-2">
               <label for="api-id" class="field-label">API ID</label>
-              <input type="text" id="api-id" value="38434252" placeholder="38434252" class="input" autocomplete="off" inputmode="numeric">
+              <input type="text" id="api-id" value="38434252" placeholder="38434252" class="input font-mono" autocomplete="off" inputmode="numeric">
             </div>
             <div class="flex flex-col gap-2">
               <label for="api-hash" class="field-label">API Hash</label>
-              <input type="text" id="api-hash" value="4d1c58e9b6bd0f94512e0f6d42351c28" placeholder="4d1c58e9b6bd0f94512e0f6d42351c28" class="input" autocomplete="off">
+              <input type="text" id="api-hash" value="4d1c58e9b6bd0f94512e0f6d42351c28" placeholder="4d1c58e9b6bd0f94512e0f6d42351c28" class="input font-mono" autocomplete="off">
             </div>
-            <span class="field-hint">Kredensial API default sudah terisi otomatis.</span>
+            <span class="field-hint">Kredensial bawaan akun Anda sudah terisi. Buka hanya jika ingin menggantinya.</span>
           </div>
         </details>
 
@@ -289,9 +288,9 @@
 
         <!-- Top Action Bar: pencarian + saringan dalam satu baris supaya ruang
              vertikalnya untuk daftar berkas, bukan untuk kontrol. -->
-        <header class="card px-3 py-2 flex flex-wrap items-center gap-2 shrink-0">
-          <div class="relative flex-1 min-w-[160px]">
-            <input type="search" id="search-input" placeholder="Telusuri berkas..." class="input pl-9 pr-8 py-2">
+        <header class="card px-3.5 py-2.5 flex flex-wrap items-center gap-2.5 shrink-0 shadow-sm border border-cloud">
+          <div class="relative flex-1 min-w-[180px]">
+            <input type="search" id="search-input" placeholder="Telusuri berkas..." class="input pl-9 pr-8 py-2 text-sm">
             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textGray/60 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <button class="absolute right-3 top-1/2 -translate-y-1/2 text-textGray font-semibold hidden hover:text-primary text-sm leading-none" id="search-clear" aria-label="Bersihkan pencarian">&times;</button>
           </div>

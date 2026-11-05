@@ -74,7 +74,9 @@ app.get('/api/auth/status', auth.statusHandler);
 app.get('/api/settings/status', (req, res) => {
   res.json({
     configured: !!(config.apiId && config.apiHash && config.sessionString),
+    apiId: config.apiId || '',
     apiIdSet: !!config.apiId,
+    apiHashMasked: maskApiHash(config.apiHash),
     apiHashSet: !!config.apiHash,
     chatId: config.chatId || '',
     connected: client ? client.connected : false,
