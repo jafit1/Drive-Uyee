@@ -504,6 +504,11 @@ function loadFiles() {
       updateStorageInfo();
     })
     .catch(function (err) {
+      if (err.data && err.data.configured === false) {
+        state.setupNeeded = true;
+        showSetupWizard();
+        return;
+      }
       if (err.message !== 'Unauthorized') showToast('Gagal memuat berkas: ' + (err.message || ''));
     })
     .finally(function () {
@@ -2361,16 +2366,25 @@ function init() {
     .then(function (data) {
       if (data.authenticated) {
         state.loggedIn = true;
-        showDashboard();
-        loadFiles();
-        checkConnection();
-        setInterval(checkConnection, 30000);
+        // Check if Telegram session is actually configured
+        api('/api/settings/status')
+          .then(function (s) {
+            if (!s.configured) {
+              state.setupNeeded = true;
+              showSetupWizard();
+            } else {
+              showDashboard();
+              loadFiles();
+              checkConnection();
+              setInterval(checkConnection, 30000);
+            }
+          })
+          .catch(function () {
+            showDashboard();
+            loadFiles();
+          });
       } else {
-        // Not signed in. The password gate comes first either way: every setup
-        // endpoint except /api/settings/status is behind requireAuth, so
-        // opening the wizard here would only produce a 401 on the first submit.
-        // The status probe still runs, so a successful login knows whether to
-        // land on the wizard or the dashboard.
+        // Not signed in to web session.
         showLoginGate();
         api('/api/settings/status')
           .then(function (s) { state.setupNeeded = !s.configured; })
