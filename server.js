@@ -26,6 +26,7 @@ const { pruneCacheDirectories } = require('./cache-policy');
 // Throwaway mailbox (mail.tm). Own module for the same reason as sync-media:
 // the shaping is pure and unit-testable without standing up a server.
 const tempmail = require('./tempmail');
+const { runSwarm, MODEL_DEFAULT } = require('./agents');
 
 // Try to load Sharp for image compression
 let sharp = null;
@@ -84,8 +85,22 @@ app.get('/api/settings/status', (req, res) => {
   });
 });
 
+// Gemini swarm status is public so the deployment panel can verify configuration.
+app.get('/api/agents/status', (req, res) => {
+  const names = ['supervisor', 'researcher', 'coder', 'reviewer'];
+  res.json({ model: MODEL_DEFAULT, agents: names.map(name => ({ name, configured: !!(process.env[`GEMINI_API_KEY_${name.toUpperCase()}`] || process.env.GEMINI_API_KEY) })) });
+});
+
 // ── Gate: every other /api/* route requires a valid session ──
 app.use('/api', auth.requireAuth);
+
+app.post('/api/agents/run', async (req, res) => {
+  try {
+    res.json(await runSwarm(req.body?.task));
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message || 'Swarm gagal dijalankan.' });
+  }
+});
 
 // Directories — media Turunan (cache, thumbnail, upload, temp) bisa dipisah
 // dari volume lewat EPHEMERAL_CACHE=1. Kalau aktif, semuanya pindah ke /tmp
