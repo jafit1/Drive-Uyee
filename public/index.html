@@ -25,7 +25,7 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="/css/nexus.css?v=botkeep-thumbs-4">
+  <link rel="stylesheet" href="/css/nexus.css?v=botkeep-thumbs-5">
 </head>
 <body class="antialiased">
 
@@ -749,6 +749,13 @@
     })();
   </script>
 
-   <script src="js/app.js?v=botkeep-thumbs-4"></script>
+   <script src="js/app.js?v=botkeep-thumbs-5"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function () {});
+        });
+      }
+    </script>
 </body>
 </html>

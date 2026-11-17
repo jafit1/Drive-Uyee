@@ -2361,6 +2361,32 @@ function bindEvents() {
     }
   });
 
+  // Swipe through photos on touch screens. Ignored while zoomed in, where the
+  // same gesture belongs to panning the image.
+  (function () {
+    var stage = $('lb-stage');
+    if (!stage) return;
+    var sx = 0, sy = 0, tracking = false;
+    stage.addEventListener('touchstart', function (e) {
+      if (pvZoom !== 1 || e.touches.length !== 1) return;
+      if (e.target.closest && e.target.closest('button')) return;
+      sx = e.touches[0].clientX;
+      sy = e.touches[0].clientY;
+      tracking = true;
+    }, { passive: true });
+    stage.addEventListener('touchend', function (e) {
+      if (!tracking) return;
+      tracking = false;
+      var t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      var dx = t.clientX - sx;
+      var dy = t.clientY - sy;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      if (dx < 0) lightboxNext();
+      else lightboxPrev();
+    }, { passive: true });
+  })();
+
   // Drag & drop
   setupDragDrop();
 }

@@ -11,6 +11,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { pipeline } = require('stream/promises');
 const zlib = require('zlib');
+const crypto = require('crypto');
 const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const { computeCheck } = require('telegram/Password');
@@ -69,12 +70,12 @@ const MAX_UPLOAD_BYTES = Math.max(1024 * 1024, Number(process.env.MAX_UPLOAD_BYT
 app.set('trust proxy', 1);
 app.use(express.json());
 
-// Static assets are tiny but the VPS is slow; gzip them once in memory instead
-// of pulling in a compression dependency. Only the four shell files are worth
-// compressing — API responses are small JSON and media is already compressed.
+// Static shell files are compressed once in memory instead of pulling in a
+// dependency. Brotli when the browser speaks it, gzip otherwise. Only the
+// shell files are worth it — API JSON is small and media is already compact.
 const staticDir = path.join(__dirname, 'public');
 const gzipCache = new Map();
-const GZIP_STATIC = new Set(['/index.html', '/css/nexus.css', '/js/app.js', '/favicon.svg']);
+const GZIP_STATIC = new Set(['/index.html', '/css/nexus.css', '/js/app.js', '/favicon.svg', '/sw.js']);
 const STATIC_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -83,28 +84,34 @@ const STATIC_TYPES = {
 };
 app.use((req, res, next) => {
   const rel = req.path === '/' ? '/index.html' : req.path;
-  if (req.method !== 'GET' || !GZIP_STATIC.has(rel) ||
-      !/\bgzip\b/i.test(req.headers['accept-encoding'] || '')) return next();
+  if (req.method !== 'GET' || !GZIP_STATIC.has(rel)) return next();
+  const accept = req.headers['accept-encoding'] || '';
+  const enc = /\bbr\b/i.test(accept) ? 'br' : /\bgzip\b/i.test(accept) ? 'gzip' : null;
+  if (!enc) return next();
   const file = path.join(staticDir, rel);
   let stat;
   try { stat = fs.statSync(file); } catch { return next(); }
-  let entry = gzipCache.get(rel);
+  const cacheKey = rel + ':' + enc;
+  let entry = gzipCache.get(cacheKey);
   if (!entry || entry.mtime !== stat.mtimeMs) {
-    entry = { mtime: stat.mtimeMs, body: zlib.gzipSync(fs.readFileSync(file), { level: 6 }) };
-    gzipCache.set(rel, entry);
+    const raw = fs.readFileSync(file);
+    const body = enc === 'br'
+      ? zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } })
+      : zlib.gzipSync(raw, { level: 6 });
+    entry = { mtime: stat.mtimeMs, body };
+    gzipCache.set(cacheKey, entry);
   }
   res.setHeader('Content-Type', STATIC_TYPES[path.extname(rel)] || 'application/octet-stream');
-  res.setHeader('Content-Encoding', 'gzip');
+  res.setHeader('Content-Encoding', enc);
   res.setHeader('Vary', 'Accept-Encoding');
-  res.setHeader('Cache-Control', rel === '/index.html'
-    ? 'no-cache'
-    : 'public, max-age=31536000, immutable');
+  res.setHeader('Cache-Control',
+    rel === '/index.html' || rel === '/sw.js' ? 'no-cache' : 'public, max-age=31536000, immutable');
   res.end(entry.body);
 });
 
 app.use(express.static(staticDir, {
   setHeaders(res, filePath) {
-    res.setHeader('Cache-Control', /\.html$/.test(filePath)
+    res.setHeader('Cache-Control', /\.html$|\/sw\.js$/.test(filePath)
       ? 'no-cache'
       : /\.(css|js|svg|woff2?)$/.test(filePath)
         ? 'public, max-age=31536000, immutable'
@@ -952,6 +959,16 @@ async function compressImage(inputBuffer, maxDimension = 1920, quality = 80, hin
   }
 }
 
+// compressImage falls back to returning its input unchanged on error; writing
+// that straight to a .webp path would mislabel JPEG bytes. Callers that name
+// the output by format use this and fall back to the native JPEG variant.
+async function toWebp(buf, edge, quality, name) {
+  const out = await compressImage(buf, edge, quality, name);
+  if (out === buf || out.slice(0, 4).toString() !== 'RIFF' ||
+      out.slice(8, 12).toString() !== 'WEBP') throw new Error('WebP encode unavailable');
+  return out;
+}
+
 /* ffmpeg is the only way to make a picture out of a video the browser will not
    play. A .mov from an iPhone is HEVC, and HEVC-in-MOV is exactly the case where
    <video> shows a black box on Chrome and Firefox. Pulling one frame at ~1s to
@@ -1545,7 +1562,15 @@ app.get('/api/files', checkConfig, (req, res) => {
   try {
     const rawFiles = db.getFiles(req.query.search, req.query.category);
     const grouped = groupSplitFiles(rawFiles);
-    res.json(grouped);
+    // The file list changes rarely but used to be re-sent on every navigation.
+    // A content hash lets a reload reuse the local copy for free.
+    const body = JSON.stringify(grouped);
+    const etag = '"' + crypto.createHash('sha1').update(body).digest('base64url').slice(0, 16) + '"';
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return res.send(body);
   }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -2000,20 +2025,26 @@ app.get('/api/thumb/:fileKey', checkConfig, async (req, res) => {
   }
 });
 
-// 6a. Middle tier for images. Sharp is disabled on the 512 MB Botkeep plan, so
-// instead of decoding an original we ask Telegram for the largest pre-rendered
-// variant it already keeps. Typical cost is tens of KB and zero CPU. The lightbox
-// loads this on open; the full original is only fetched later, for the one photo
-// actually being viewed.
+// 6a. Middle tier for images.
+//
+// Two paths, chosen per photo. Telegram's largest pre-rendered variant is
+// always tried first: it costs tens of KB and no CPU. When that variant is too
+// small for the lightbox and Sharp is available, we pull the cached original
+// once and emit a 1280px WebP. On the 512 MB plan Sharp is disabled, so the
+// native-variant branch keeps working unchanged.
 const MEDIUM_MAX_BYTES = Number(process.env.MEDIUM_MAX_BYTES) || 2 * 1024 * 1024;
+const MEDIUM_LONG_EDGE = Number(process.env.MEDIUM_LONG_EDGE) || 1280;
+const MEDIUM_SHARP_MAX_BYTES = Number(process.env.MEDIUM_SHARP_MAX_BYTES) || 32 * 1024 * 1024;
 
 app.get('/api/medium/:fileKey', checkConfig, async (req, res) => {
   const fileKey = req.params.fileKey;
   try {
     const file = db.getFile(fileKey);
     if (!file) return res.status(404).end();
-    const cached = path.join(thumbDir, `${fileKey}.medium.jpg`);
-    if (fs.existsSync(cached)) return sendCachedThumb(res, cached);
+    const webp = path.join(thumbDir, `${fileKey}.medium.webp`);
+    const jpg = path.join(thumbDir, `${fileKey}.medium.jpg`);
+    if (sharp && fs.existsSync(webp)) return sendCachedThumb(res, webp);
+    if (fs.existsSync(jpg)) return sendCachedThumb(res, jpg);
     if (!file.telegram_media_id) return sendNoThumb(res);
 
     const built = await dedupeCacheWork(`medium:${fileKey}`, async () => {
@@ -2025,13 +2056,47 @@ app.get('/api/medium/:fileKey', checkConfig, async (req, res) => {
         });
         const msg = messages && messages[0];
         if (!msg || !msg.media) return null;
+        const variant = getMediumThumb(msg.media);
+        const variantEdge = variant ? Math.max(variant.w || 0, variant.h || 0) : 0;
+
+        // Sharp path: only when the native variant would look soft, and the
+        // original is small enough to decode without risking the process.
+        if (sharp && (!variant || variantEdge < MEDIUM_LONG_EDGE)) {
+          const declared = Number(file.total_size) || 0;
+          if (declared > 0 && declared <= MEDIUM_SHARP_MAX_BYTES) {
+            try {
+              const resolved = await resolveFileParts(fileKey);
+              if (resolved) {
+                const target = resolved.isSplit
+                  ? await ensureMergedCache(fileKey, resolved.parts, resolved.baseName)
+                  : await ensureCachedOriginal(file, fileKey, resolved.baseName, 'medium');
+                const buf = await toWebp(
+                  fs.readFileSync(target), MEDIUM_LONG_EDGE, 82, resolved.baseName);
+                fs.writeFileSync(webp, buf);
+                return webp;
+              }
+            } catch (err) {
+              console.log(`Medium Sharp path failed for ${file.filename}: ${err.message}`);
+            }
+          }
+        }
+
         const buf = await downloadTelegramThumb(msg, {
           pick: getMediumThumb,
           maxBytes: MEDIUM_MAX_BYTES,
         });
         if (!buf) return null;
-        fs.writeFileSync(cached, buf);
-        return cached;
+        if (sharp) {
+          try {
+            const out = await toWebp(buf, MEDIUM_LONG_EDGE, 80, file.filename);
+            fs.writeFileSync(webp, out);
+            return webp;
+          } catch (err) {
+            console.log(`Medium WebP transcode failed for ${file.filename}: ${err.message}`);
+          }
+        }
+        fs.writeFileSync(jpg, buf);
+        return jpg;
       } finally {
         releaseThumbSlot();
       }
