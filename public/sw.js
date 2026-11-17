@@ -2,8 +2,13 @@
    Only the UI shell and the two image tiers are cached. API JSON, uploads and
    downloads always go to the network so a stale file list can never hide a
    newly synced file. */
-const VERSION = 'drive-uyee-v1';
-const SHELL = ['/', '/index.html', '/css/nexus.css', '/js/app.js', '/favicon.svg'];
+// Version must change whenever the shell changes. The previous version pinned
+// app.js and nexus.css forever, so a redeploy was invisible to returning users.
+const VERSION = 'drive-uyee-v2';
+// Only navigation shell and favicon live here. JS/CSS already carry a versioned
+// query string and are cached by the browser as immutable — caching them here
+// a second time only makes new deployments invisible.
+const SHELL = ['/', '/index.html', '/favicon.svg'];
 
 self.addEventListener('install', function (event) {
   event.waitUntil(
