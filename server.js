@@ -12,6 +12,7 @@ const { spawn } = require('child_process');
 const { pipeline } = require('stream/promises');
 const zlib = require('zlib');
 const crypto = require('crypto');
+const archiver = require('archiver');
 const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const { computeCheck } = require('telegram/Password');
@@ -798,6 +799,14 @@ function sendCacheFile(res, filePath, options) {
   return res.sendFile(filePath, onSent);
 }
 
+// Streaming SHA-256 — a 12 MB phone photo must not be held in memory just to
+// prove two differently named files are the same bytes.
+async function hashFile(filePath) {
+  const hash = crypto.createHash('sha256');
+  for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
 function dedupeCacheWork(key, fn) {
   const existing = inFlightCache.get(key);
   if (existing) return existing;
@@ -831,6 +840,11 @@ async function ensureCachedOriginal(file, fileKey, baseName, reason) {
     try {
       await client.downloadMedia(messages[0].media, { outputFile: partialPath, workers: TRANSFER_WORKERS });
       fs.renameSync(partialPath, targetPath);
+      // Synced files have no hash until their original is first cached. Fill it
+      // in now so the duplicate detector can see them on later visits.
+      if (!file.content_hash) {
+        try { db.updateFileHash(fileKey, await hashFile(targetPath)); } catch {}
+      }
     } catch (err) {
       try { if (fs.existsSync(partialPath)) fs.unlinkSync(partialPath); } catch {}
       markRevokedIfNeeded(err, 'download');
@@ -1618,6 +1632,20 @@ app.post('/api/upload', checkConfig, upload.single('file'), async (req, res) => 
     fs.mkdirSync(tempDir2, { recursive: true });
     fs.renameSync(filePath, tempFilePath);
 
+    // Content identity, not filename. A renamed copy of an existing photo is
+    // still a duplicate and should never consume Telegram quota again.
+    const contentHash = await hashFile(tempFilePath).catch(() => null);
+    const twin = contentHash ? db.getFileByHashAndSize(contentHash, totalSize) : null;
+    if (twin) {
+      console.log(`Skipping content duplicate: ${originalName} == ${twin.filename}`);
+      db.logActivity('Upload', `Unggahan dilewati, isi sama dengan: ${twin.filename}`);
+      try { if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath); } catch {}
+      try { if (fs.existsSync(tempDir2)) fs.rmdirSync(tempDir2); } catch {}
+      uploadProgress.set(uploadId, { total: 100, uploaded: 100, status: 'done', fileKey: twin.file_key, filename: originalName });
+      setTimeout(() => uploadProgress.delete(uploadId), 10000);
+      return res.json({ success: true, fileKey: twin.file_key, skipped: true, duplicateOf: twin.filename });
+    }
+
     await ensureConnection();
 
     const message = await client.sendFile(config.chatId, {
@@ -1663,7 +1691,7 @@ app.post('/api/upload', checkConfig, upload.single('file'), async (req, res) => 
       console.log('Failed to cache thumbnail on upload:', thumbErr.message);
     }
 
-    db.saveFile(fileKey, originalName, mimeType, category, totalSize, telegramMediaId, accessHash, fileReference, telegramThumbId, dcId);
+    db.saveFile(fileKey, originalName, mimeType, category, totalSize, telegramMediaId, accessHash, fileReference, telegramThumbId, dcId, contentHash);
     db.logActivity('Upload', `Selesai mengunggah ${originalName} ke Telegram`);
 
     const p = uploadProgress.get(uploadId);
@@ -2640,6 +2668,84 @@ async function syncAllFromChannel() {
 // 14. Sync status
 app.get('/api/sync-status', (req, res) => {
   res.json({ syncing: syncInProgress, progress: syncProgress });
+});
+
+// 14a. Duplicate detection by content hash. Names are irrelevant: the same
+// bytes under two filenames collapse into one group.
+app.get('/api/duplicates', checkConfig, (req, res) => {
+  try {
+    const groups = db.getDuplicateGroups();
+    res.json({
+      groups,
+      totalGroups: groups.length,
+      redundantFiles: groups.reduce((n, g) => n + g.length - 1, 0),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fill hashes for files whose original already sits in the cache. Bounded so a
+// 2 GB cache cannot block a request; call again to continue.
+app.post('/api/duplicates/scan', checkConfig, async (req, res) => {
+  const LIMIT = 200;
+  let scanned = 0;
+  try {
+    const candidates = db.getFiles().filter(f => {
+      if (f.content_hash) return false;
+      const ext = path.extname(f.filename) || '';
+      return fs.existsSync(path.join(cacheDir, `${f.file_key}${ext}`));
+    }).slice(0, LIMIT);
+
+    for (const file of candidates) {
+      const ext = path.extname(file.filename) || '';
+      try {
+        db.updateFileHash(file.file_key, await hashFile(path.join(cacheDir, `${file.file_key}${ext}`)));
+        scanned++;
+      } catch {}
+    }
+    const groups = db.getDuplicateGroups();
+    res.json({ scanned, groups, totalGroups: groups.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 14b. Multi-file download as one streamed ZIP. Firing N anchor clicks used to
+// get blocked by the browser after the first two downloads.
+app.post('/api/download/zip', checkConfig, async (req, res) => {
+  const keys = Array.isArray(req.body && req.body.keys) ? req.body.keys.slice(0, 20) : [];
+  if (!keys.length) return res.status(400).json({ error: 'Tidak ada berkas dipilih.' });
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="drive-uyee.zip"');
+  res.setHeader('Cache-Control', 'no-store');
+  const archive = archiver('zip', { zlib: { level: 1 } });
+  archive.on('error', (err) => { if (!res.headersSent) res.status(500).json({ error: err.message }); else res.destroy(err); });
+  archive.pipe(res);
+
+  const used = new Map();
+  for (const key of keys) {
+    try {
+      const resolved = await resolveFileParts(key);
+      if (!resolved) continue;
+      const { file, parts, baseName, isSplit } = resolved;
+      const target = isSplit
+        ? await ensureMergedCache(key, parts, baseName)
+        : await ensureCachedOriginal(file, key, baseName, 'zip');
+      let name = path.basename(baseName) || file.filename || 'berkas';
+      const seen = used.get(name) || 0;
+      used.set(name, seen + 1);
+      if (seen) {
+        const dot = name.lastIndexOf('.');
+        name = dot > 0 ? `${name.slice(0, dot)} (${seen + 1})${name.slice(dot)}` : `${name} (${seen + 1})`;
+      }
+      archive.file(target, { name });
+    } catch (err) {
+      console.error('ZIP entry failed:', err.message);
+    }
+  }
+  await archive.finalize();
 });
 
 // 15. Stats

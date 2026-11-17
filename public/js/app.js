@@ -18,6 +18,9 @@ var state = {
   files: [],
   filteredFiles: [],
   selectedIds: new Set(),
+  duplicates: null,
+  duplicateOnly: false,
+  duplicateScanned: false,
   activeCategory: 'all',
   searchQuery: '',
   sortBy: 'newest',
@@ -515,6 +518,15 @@ function applyFilters() {
     }
   }
 
+  // Content-duplicate view, independent of filename.
+  if (state.duplicateOnly && state.duplicates) {
+    var dupKeys = {};
+    state.duplicates.groups.forEach(function (g) {
+      g.forEach(function (f) { dupKeys[f.file_key] = true; });
+    });
+    files = files.filter(function (f) { return !!dupKeys[f.file_key]; });
+  }
+
   // Sort
   switch (state.sortBy) {
     case 'newest': files.sort(function (a, b) { return new Date(b.uploaded_at || 0) - new Date(a.uploaded_at || 0); }); break;
@@ -637,6 +649,26 @@ function attachLoadSentinel(files, container, token, renderItem, shown) {
   observer.observe(sentinel);
 }
 
+function selectBoxHtml(file, isSelected, floating) {
+  var key = escapeHtml(file.file_key || '');
+  var label = escapeHtml(file.filename || file.name || 'berkas');
+  return '<button type="button" class="sel-box' + (floating ? ' sel-float' : '') + (isSelected ? ' selected' : '') +
+    '" data-key="' + key + '" aria-label="Pilih ' + label + '">' +
+    (isSelected ? '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>' : '') +
+    '</button>';
+}
+
+function bindSelectBox(el, file) {
+  var box = el.querySelector('.sel-box');
+  if (!box) return;
+  box.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!state.isBulkMode) state.isBulkMode = true;
+    toggleSelect(file.file_key);
+  });
+}
+
 function renderGrid(container, token) {
   renderInBatches(state.filteredFiles, container, token, function (file) {
     var card = document.createElement('div');
@@ -658,12 +690,8 @@ function renderGrid(container, token) {
       iconColor
     );
 
-    // Checkbox (bulk mode)
-    var checkboxHtml = state.isBulkMode ?
-      '<div class="absolute top-2 left-2 z-10">' +
-      '<div class="w-5 h-5 rounded flex items-center justify-center transition" style="background:' + (isSelected ? 'rgb(var(--c-accent))' : 'rgb(var(--c-surface))') + ';border:2px solid ' + (isSelected ? 'rgb(var(--c-accent))' : 'rgb(var(--c-border))') + '">' +
-      (isSelected ? '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" class="w-3 h-3"><polyline points="20 6 9 17 4 12"/></svg>' : '') +
-      '</div></div>' : '';
+    // Selection is available without entering a hidden mode first.
+    var checkboxHtml = selectBoxHtml(file, isSelected, true);
 
     var name = escapeHtml(file.filename || file.name || 'Unnamed');
     var size = formatBytes(file.total_size || file.size);
@@ -680,6 +708,7 @@ function renderGrid(container, token) {
       '<span>' + date + '</span>' +
       '</div>';
 
+    bindSelectBox(card, file);
     card.addEventListener('click', function (e) {
       e.preventDefault();
       if (state.isBulkMode) toggleSelect(file.file_key);
@@ -710,10 +739,7 @@ function renderList(container, token) {
     var ext = getFileExt(file.filename || file.name || '');
     var iconColor = cat === 'image' ? '#1e8e3e' : cat === 'video' ? '#d93025' : cat === 'audio' ? '#a142f4' : getExtColor(ext);
 
-    var checkboxHtml = state.isBulkMode ?
-      '<div class="w-5 h-5 rounded flex items-center justify-center shrink-0 transition" style="background:' + (isSelected ? 'rgb(var(--c-accent))' : 'transparent') + ';border:2px solid ' + (isSelected ? 'rgb(var(--c-accent))' : 'rgb(var(--c-border))') + '">' +
-      (isSelected ? '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" class="w-3 h-3"><polyline points="20 6 9 17 4 12"/></svg>' : '') +
-      '</div>' : '';
+    var checkboxHtml = selectBoxHtml(file, isSelected, false);
 
     var iconHtml = thumbCell(
       file, cat, ext,
@@ -737,6 +763,7 @@ function renderList(container, token) {
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>' +
       '</button>';
 
+    bindSelectBox(row, file);
     row.addEventListener('click', function (e) {
       e.preventDefault();
       if (state.isBulkMode) toggleSelect(file.file_key);
@@ -786,6 +813,8 @@ function toggleBulkMode() {
 
 function updateBulkBar() {
   var bar = $('bulk-bar');
+  var selectBtn = $('btn-select-mode');
+  if (selectBtn) selectBtn.classList.toggle('active', state.isBulkMode);
   if (state.isBulkMode && state.selectedIds.size > 0) {
     bar.classList.remove('hidden');
     $('bulk-count').textContent = state.selectedIds.size;
@@ -801,13 +830,57 @@ function selectAll() {
 }
 
 function bulkDownload() {
-  state.selectedIds.forEach(function (key) {
-    var link = document.createElement('a');
-    link.href = '/api/download/' + key;
-    link.download = '';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  var keys = Array.from(state.selectedIds);
+  if (!keys.length) return;
+  showToast('Menyiapkan ZIP untuk ' + keys.length + ' berkas…');
+  fetch('/api/download/zip', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ keys: keys }),
+  }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.blob();
+  }).then(function (blob) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'drive-uyee.zip';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+  }).catch(function (err) {
+    showToast('Gagal menyiapkan ZIP: ' + err.message, 'error');
+  });
+}
+
+/* Detect identical bytes under different names. Hashing is done on the server;
+   the client only toggles the filtered view and keeps the group metadata. */
+function toggleDuplicates() {
+  var btn = $('btn-duplicates');
+  if (!state.duplicateScanned) {
+    showToast('Memindai isi berkas…');
+    api('/api/duplicates/scan', { method: 'POST' }).catch(function () {}).finally(function () {
+      state.duplicateScanned = true;
+      loadDuplicates(true);
+    });
+    return;
+  }
+  loadDuplicates(!state.duplicateOnly);
+}
+
+function loadDuplicates(activate) {
+  api('/api/duplicates').then(function (data) {
+    state.duplicates = data;
+    state.duplicateOnly = !!activate && data.totalGroups > 0;
+    var btn = $('btn-duplicates');
+    if (btn) btn.classList.toggle('active', state.duplicateOnly);
+    applyFilters();
+    if (data.totalGroups === 0) showToast('Tidak ada berkas dengan isi sama.');
+    else showToast(data.totalGroups + ' grup duplikat · ' + data.redundantFiles + ' berkas berlebih' +
+      (state.duplicateOnly ? ' — menampilkan semuanya.' : ' — klik lagi untuk melihat.'));
+  }).catch(function (err) {
+    showToast('Gagal memindai duplikat: ' + err.message, 'error');
   });
 }
 
@@ -2385,6 +2458,13 @@ function bindEvents() {
   $('upload-panel-toggle').addEventListener('click', function () {
     applyUploadCollapse(!isUploadPanelCollapsed());
   });
+
+  // Selection & duplicate tools
+  $('btn-select-mode').addEventListener('click', function () {
+    toggleBulkMode();
+    $('btn-select-mode').classList.toggle('active', state.isBulkMode);
+  });
+  $('btn-duplicates').addEventListener('click', toggleDuplicates);
 
   // Sync
   $('btn-sync').addEventListener('click', handleSync);

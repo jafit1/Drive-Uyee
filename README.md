@@ -44,6 +44,12 @@ The endpoint is idempotent: files that already have a cached thumbnail return im
 
 The browser keeps the upload queue in IndexedDB, including the `File` blobs. A hard refresh restores pending and in-flight items and resumes them automatically; minimizing the panel is persisted in `localStorage`. Three files upload concurrently (`UPLOAD_CONCURRENCY` in `app.js`), and each file uses `TRANSFER_WORKERS` Telegram workers. The panel header always shows completed/total and an aggregate percentage, even while collapsed.
 
+## Duplicates and bulk actions
+
+Uploads store a streaming SHA-256 of the file bytes, so a renamed copy is recognised as a duplicate and skipped before it reaches Telegram. Synced files get the same hash lazily when their original is first cached; `/api/duplicates/scan` fills hashes for already-cached originals in bounded batches. The "Duplikat" button filters the grid to every file in a same-content group.
+
+Selection is available directly on each card. The "Pilih" button enters bulk mode, and bulk download streams one ZIP (`/api/download/zip`) instead of firing several anchor clicks that browsers block.
+
 ## Design system
 
 `DESIGN.md` is the visual contract for the project: colour tokens, type scale, spacing, responsive grid, component rules, motion, accessibility and anti-patterns. It is served publicly at `/design.md`, with a live, mobile-first reference page at `/design`.

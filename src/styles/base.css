@@ -50,8 +50,21 @@ a { color: inherit; text-decoration: none; }
 ::-webkit-scrollbar-thumb { background: rgb(var(--c-text-muted) / 0.25); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-text-muted) / 0.45); }
 
-.custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: rgb(var(--c-text-muted) / 0.2); border-radius: 9999px; }
+/* Main scroll area. The old 5px thumb at 20% opacity was practically invisible
+   on the dark surface, so the grid looked like it had no scrollbar at all. */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--c-text-muted) / 0.5) transparent;
+}
+.custom-scrollbar::-webkit-scrollbar { width: 9px; height: 9px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(var(--c-text-muted) / 0.5);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-text-muted) / 0.8); background-clip: padding-box; }
 
 /* ─────────────────────────────────────────────────────────────
    THEME CROSSFADE

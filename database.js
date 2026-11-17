@@ -46,7 +46,8 @@ function init() {
     { name: 'access_hash', type: 'TEXT' },
     { name: 'file_reference', type: 'TEXT' },
     { name: 'telegram_thumb_id', type: 'TEXT' },
-    { name: 'dc_id', type: 'INTEGER' }
+    { name: 'dc_id', type: 'INTEGER' },
+    { name: 'content_hash', type: 'TEXT' }
   ];
 
   columnsToAdd.forEach(col => {
@@ -57,6 +58,9 @@ function init() {
       // Column already exists or table does not exist
     }
   });
+
+  // After the migration loop: an older database has no content_hash column yet.
+  db.exec('CREATE INDEX IF NOT EXISTS idx_files_content_hash ON files(content_hash, total_size)');
 
   // Create activity_logs table
   db.exec(`
@@ -77,13 +81,40 @@ init();
 
 module.exports = {
   // Save file metadata
-  saveFile(fileKey, filename, mimeType, category, totalSize, telegramMediaId, accessHash, fileReference, telegramThumbId = null, dcId = 4) {
+  saveFile(fileKey, filename, mimeType, category, totalSize, telegramMediaId, accessHash, fileReference, telegramThumbId = null, dcId = 4, contentHash = null) {
     const query = db.prepare(`
-      INSERT INTO files (file_key, filename, mime_type, category, total_size, uploaded_at, telegram_media_id, access_hash, file_reference, telegram_thumb_id, dc_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO files (file_key, filename, mime_type, category, total_size, uploaded_at, telegram_media_id, access_hash, file_reference, telegram_thumb_id, dc_id, content_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const now = new Date().toISOString();
-    return query.run(fileKey, filename, mimeType, category, totalSize, now, telegramMediaId, accessHash, fileReference, telegramThumbId, dcId);
+    return query.run(fileKey, filename, mimeType, category, totalSize, now, telegramMediaId, accessHash, fileReference, telegramThumbId, dcId, contentHash);
+  },
+
+  // Content identity is independent of filename: two photos renamed differently
+  // still collapse into one duplicate group.
+  updateFileHash(fileKey, contentHash) {
+    try {
+      return db.prepare('UPDATE files SET content_hash = ? WHERE file_key = ?').run(contentHash, fileKey);
+    } catch (err) {
+      console.error('Failed to update content hash:', err.message);
+    }
+  },
+
+  getDuplicateGroups() {
+    const rows = db.prepare(`
+      SELECT file_key, filename, total_size, content_hash
+      FROM files
+      WHERE content_hash IS NOT NULL AND content_hash != ''
+      ORDER BY total_size DESC
+    `).all();
+    const groups = new Map();
+    for (const row of rows) {
+      const key = row.content_hash + ':' + row.total_size;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    }
+    return [...groups.values()].filter(g => g.length > 1)
+      .sort((a, b) => (b[0].total_size || 0) - (a[0].total_size || 0));
   },
 
   // Retrieve files with search and category filters
@@ -120,6 +151,12 @@ module.exports = {
   getFileByNameAndSize(filename, totalSize) {
     const query = db.prepare('SELECT * FROM files WHERE filename = ? AND total_size = ?');
     return query.get(filename, totalSize);
+  },
+
+  getFileByHashAndSize(contentHash, totalSize) {
+    if (!contentHash) return null;
+    const query = db.prepare('SELECT * FROM files WHERE content_hash = ? AND total_size = ? ORDER BY id ASC');
+    return query.get(contentHash, totalSize);
   },
 
   // Delete file metadata

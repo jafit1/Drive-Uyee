@@ -658,6 +658,28 @@
    ───────────────────────────────────────────────────────────── */
 .rise-in { animation: riseIn .42s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
+/* Always-visible selection control. The old checkbox existed only in bulk
+   mode, which nobody could discover — the button in the toolbar now enters
+   that mode, and the box on each card can start a selection on its own. */
+.sel-box {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgb(var(--c-border));
+  border-radius: 6px;
+  background: rgb(var(--c-surface));
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: background-color .15s ease, border-color .15s ease, transform .15s var(--ease);
+}
+.sel-box:hover { border-color: rgb(var(--c-accent)); transform: scale(1.06); }
+.sel-box.selected { background: rgb(var(--c-accent)); border-color: rgb(var(--c-accent)); }
+.sel-box svg { width: 12px; height: 12px; stroke: rgb(var(--c-on-accent)); fill: none; stroke-width: 3; }
+.sel-float { position: absolute; top: 8px; left: 8px; z-index: 10; opacity: 0; transition: opacity .15s ease; }
+.card:hover .sel-float, .sel-float.selected { opacity: 1; }
+@media (hover: none) { .sel-float { opacity: 1; } }
+#btn-duplicates.active, #btn-select-mode.active { color: rgb(var(--c-accent)); border-color: rgb(var(--c-accent)); }
+
 /* Lightbox quality control. Only rendered while an image is open; the full
    original is fetched on demand, never for the grid or for other photos. */
 .pv-quality {
