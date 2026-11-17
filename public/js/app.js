@@ -1044,7 +1044,13 @@ function loadLightboxContent(file) {
       img.onload = null;
       img.onerror = null;
       img.classList.remove('pv-blur');
+      // The candidate Image has already decoded this URL, so the swap paints
+      // from cache. A two-frame focus pull makes the tier change feel deliberate.
+      img.classList.add('pv-swapping');
       img.src = src;
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { img.classList.remove('pv-swapping'); });
+      });
       showPreviewSurface('lb-img');
       pvApplyZoom();
     }

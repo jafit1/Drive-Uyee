@@ -439,6 +439,15 @@ body.sidebar-open #sidebar-backdrop { opacity: 1; pointer-events: auto; }
   50%      { opacity: .95; }
 }
 
+/* Crossfade between the three image tiers. The incoming image is already
+   decoded when we swap, so a brief focus pull reads as intentional instead of
+   a hard cut. */
+.pv-img { transition: opacity .28s ease, filter .28s ease, transform .28s cubic-bezier(.2,.7,.2,1); }
+.pv-img.pv-swapping { opacity: .55; filter: blur(6px); }
+@media (prefers-reduced-motion: reduce) {
+  .pv-img, .pv-img.pv-swapping { transition: none; filter: none; opacity: 1; }
+}
+
 .pv-video {
   display: block;
   max-width: 100%;
