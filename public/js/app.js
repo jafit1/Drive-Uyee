@@ -29,6 +29,8 @@ var state = {
   isBulkMode: false,
   lightboxIndex: -1,
   lightboxList: [],
+  visibleCount: 48,
+  sentinel: null,
   renderToken: 0,
   uploads: [],
   contextFile: null,
@@ -524,6 +526,7 @@ function applyFilters() {
   }
 
   state.filteredFiles = files;
+  state.visibleCount = 48;
   renderFiles();
 }
 
@@ -537,6 +540,8 @@ function renderFiles() {
   if (tempmailContainer) tempmailContainer.classList.add('hidden');
   container.classList.remove('hidden');
   container.innerHTML = '';
+  if (state.sentinel && state.sentinel.parentNode) state.sentinel.parentNode.removeChild(state.sentinel);
+  state.sentinel = null;
   var renderToken = ++state.renderToken;
   container.className = state.layout === 'grid'
     // Dua kolom di HP terkecil, lalu bertambah seiring lebar layar. Batasnya
@@ -565,18 +570,61 @@ function renderFiles() {
   else renderList(container, renderToken);
 }
 
+var FILE_PAGE_SIZE = 48;
+
+// Render the first page, then append more as the user approaches the bottom.
+// Building 500 cards up front made the grid slow long before the thumbnails
+// had a chance to lazy-load; the file list is still kept whole for search,
+// lightbox navigation and selection.
 function renderInBatches(files, container, token, renderItem) {
+  var shown = Math.min(state.visibleCount || FILE_PAGE_SIZE, files.length);
   var index = 0;
-  var batchSize = 48;
   function appendBatch() {
     if (token !== state.renderToken || !container.isConnected) return;
     var fragment = document.createDocumentFragment();
-    var end = Math.min(index + batchSize, files.length);
+    var end = Math.min(index + FILE_PAGE_SIZE, shown);
     while (index < end) fragment.appendChild(renderItem(files[index++]));
     container.appendChild(fragment);
-    if (index < files.length) requestAnimationFrame(appendBatch);
+    if (index < shown) requestAnimationFrame(appendBatch);
   }
   appendBatch();
+  if (shown < files.length) attachLoadSentinel(files, container, token, renderItem, shown);
+}
+
+function attachLoadSentinel(files, container, token, renderItem, shown) {
+  var sentinel = document.createElement('div');
+  sentinel.className = 'file-sentinel flex items-center justify-center py-6 text-xs text-textGray';
+  sentinel.textContent = 'Muat lebih banyak…';
+  if (container.parentNode) container.parentNode.insertBefore(sentinel, container.nextSibling);
+  state.sentinel = sentinel;
+
+  if (typeof IntersectionObserver !== 'function') {
+    sentinel.textContent = 'Tampilkan ' + (files.length - shown) + ' berkas lagi';
+    sentinel.style.cursor = 'pointer';
+    sentinel.onclick = function () {
+      var next = Math.min(shown + FILE_PAGE_SIZE, files.length);
+      var frag = document.createDocumentFragment();
+      for (var i = shown; i < next; i++) frag.appendChild(renderItem(files[i]));
+      container.appendChild(frag);
+      state.visibleCount = next;
+      sentinel.remove();
+      if (next < files.length) attachLoadSentinel(files, container, token, renderItem, next);
+    };
+    return;
+  }
+
+  var observer = new IntersectionObserver(function (entries) {
+    if (!entries[0].isIntersecting || token !== state.renderToken) return;
+    observer.disconnect();
+    var next = Math.min(shown + FILE_PAGE_SIZE, files.length);
+    var frag = document.createDocumentFragment();
+    for (var i = shown; i < next; i++) frag.appendChild(renderItem(files[i]));
+    container.appendChild(frag);
+    state.visibleCount = next;
+    if (next < files.length) attachLoadSentinel(files, container, token, renderItem, next);
+    else sentinel.remove();
+  }, { rootMargin: '600px 0px' });
+  observer.observe(sentinel);
 }
 
 function renderGrid(container, token) {
@@ -962,6 +1010,7 @@ function loadLightboxContent(file) {
   var token = ++pvToken;
   if (pvAbort) { try { pvAbort.abort(); } catch (e) {} pvAbort = null; }
   pvResetMedia();
+  if ($('lb-quality')) $('lb-quality').classList.add('hidden');
   pvZoom = 1;
 
   var name = file.filename || file.name || 'Pratinjau';
@@ -986,53 +1035,74 @@ function loadLightboxContent(file) {
 
   if (kind === 'image') {
     var img = $('lb-img');
-    var bytes = Number(file.total_size || file.size) || 0;
-    var thumbnailReady = false;
+    var qualityBtn = $('lb-quality');
+    var key = encodeURIComponent(file.file_key);
+    var fullRequested = false;
+    var fullTimer = null;
 
-    // Stand the cached thumbnail in, blurred, while the full image downloads —
-    // the same progressive reveal Drive does, and the reason opening a photo
-    // feels immediate instead of showing a spinner over an empty stage. The
-    // thumbnail shares the original's aspect ratio, so .pv-blur sizing it to the
-    // stage lands on the same box the finished image will occupy: no jump.
-    if (bytes >= PV_BLUR_MIN_BYTES) {
-      // A file with no thumbnail 404s here, which is not worth reporting — the
-      // full image is still on its way and owns the error path.
-      img.onload = function () {
-        if (token !== pvToken || !img.classList.contains('pv-blur')) return;
-        thumbnailReady = true;
-        showPreviewSurface('lb-img');
-      };
-      img.onerror = null;
-      img.classList.add('pv-blur');
-      img.src = '/api/thumb/' + encodeURIComponent(file.file_key);
-    }
-
-    // Decoded off to the side, then handed over: assigning a src the browser has
-    // already loaded paints from cache in the same frame, so the swap from blur
-    // to sharp never flashes an empty element.
-    var full = new Image();
-    full.onload = function () {
-      if (token !== pvToken) return;
+    function paintImage(src) {
       img.onload = null;
       img.onerror = null;
       img.classList.remove('pv-blur');
-      img.src = full.src;
+      img.src = src;
       showPreviewSurface('lb-img');
       pvApplyZoom();
+    }
+
+    function loadFullImage() {
+      if (fullRequested || token !== pvToken) return;
+      fullRequested = true;
+      clearTimeout(fullTimer);
+      qualityBtn.classList.add('hidden');
+      var hi = new Image();
+      hi.onload = function () {
+        if (token !== pvToken) return;
+        paintImage(hi.src);
+      };
+      hi.onerror = function () {
+        if (token !== pvToken) return;
+        qualityBtn.textContent = 'Coba lagi versi penuh';
+        qualityBtn.classList.remove('hidden');
+      };
+      hi.src = '/api/full/' + key;
+    }
+
+    // Tier 1 — the grid's cached 320px thumbnail, blurred. Painted from disk
+    // cache, so the stage is never empty even on a slow connection.
+    img.onload = function () {
+      if (token === pvToken) showPreviewSurface('lb-img');
     };
-    full.onerror = function () {
+    img.onerror = null;
+    img.classList.add('pv-blur');
+    img.src = '/api/thumb/' + key;
+
+    // Tier 2 — Telegram's largest pre-rendered variant. A few dozen KB, no
+    // original download, no Sharp. This is the "agak jernih" image.
+    var medium = new Image();
+    medium.onload = function () {
       if (token !== pvToken) return;
-      if (thumbnailReady) {
-        img.classList.remove('pv-blur');
-        showPreviewSurface('lb-img');
-        $('lb-loading-text').textContent = 'Pratinjau resolusi rendah';
-        return;
-      }
-      img.classList.remove('pv-blur');
-      showPreviewFallback(file, 'Gambar tidak dapat ditampilkan',
-        'Berkas mungkin rusak atau formatnya tidak didukung browser');
+      paintImage(medium.src);
+      qualityBtn.textContent = 'Muat versi penuh';
+      qualityBtn.classList.remove('hidden');
+      // Tier 3 — only for this photo, only after it has been on screen a while.
+      fullTimer = setTimeout(loadFullImage, 2500);
     };
-    full.src = '/api/preview/' + file.file_key;
+    medium.onerror = function () {
+      if (token !== pvToken) return;
+      // No native variant (rare): /api/preview recompresses the original.
+      var fb = new Image();
+      fb.onload = function () { if (token === pvToken) paintImage(fb.src); };
+      fb.onerror = function () {
+        if (token !== pvToken) return;
+        img.classList.remove('pv-blur');
+        showPreviewFallback(file, 'Gambar tidak dapat ditampilkan',
+          'Berkas mungkin rusak atau formatnya tidak didukung browser');
+      };
+      fb.src = '/api/preview/' + key;
+    };
+    medium.src = '/api/medium/' + key;
+
+    qualityBtn.onclick = loadFullImage;
     return;
   }
 

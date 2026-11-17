@@ -657,3 +657,26 @@
    ENTRANCE ANIMATION — keyframes live in base.css
    ───────────────────────────────────────────────────────────── */
 .rise-in { animation: riseIn .28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Lightbox quality control. Only rendered while an image is open; the full
+   original is fetched on demand, never for the grid or for other photos. */
+.pv-quality {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 12;
+  padding: 6px 11px;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 999px;
+  background: rgb(var(--c-surface) / 0.9);
+  color: rgb(var(--c-text));
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.pv-quality:hover {
+  border-color: rgb(var(--c-accent));
+  color: rgb(var(--c-accent));
+}

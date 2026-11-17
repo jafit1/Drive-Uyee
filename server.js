@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { pipeline } = require('stream/promises');
+const zlib = require('zlib');
 const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const { computeCheck } = require('telegram/Password');
@@ -50,6 +51,12 @@ const PORT = process.env.SERVER_PORT || process.env.PORT || 3000;
 const TRANSFER_WORKERS = Math.max(1, Number(process.env.TRANSFER_WORKERS) || 1);
 const CACHE_MAX_BYTES = Math.max(1024 * 1024, Number(process.env.CACHE_MAX_BYTES) || 32 * 1024 * 1024);
 const CACHE_MAX_AGE_MS = Math.max(60_000, Number(process.env.CACHE_MAX_AGE_MS) || 30 * 60 * 1000);
+// Thumbnails are a few KB each and are what the grid needs on every visit.
+// Sharing the original-file budget meant one 20 MB photo evicted 500 thumbs,
+// so the next visit re-downloaded the whole grid from Telegram. On a 1 GB VPS
+// 48 MB of thumbs is cheap and lasts a week.
+const THUMB_MAX_BYTES = Math.max(4 * 1024 * 1024, Number(process.env.THUMB_MAX_BYTES) || 48 * 1024 * 1024);
+const THUMB_MAX_AGE_MS = Math.max(60 * 60 * 1000, Number(process.env.THUMB_MAX_AGE_MS) || 7 * 24 * 60 * 60 * 1000);
 const MAX_UPLOAD_BYTES = Math.max(1024 * 1024, Number(process.env.MAX_UPLOAD_BYTES) || 128 * 1024 * 1024);
 
 // dataDir is resolved once in ./data-dir (imported above) and defaults to
@@ -61,7 +68,49 @@ const MAX_UPLOAD_BYTES = Math.max(1024 * 1024, Number(process.env.MAX_UPLOAD_BYT
 // per-IP login throttling and Secure cookies.
 app.set('trust proxy', 1);
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Static assets are tiny but the VPS is slow; gzip them once in memory instead
+// of pulling in a compression dependency. Only the four shell files are worth
+// compressing — API responses are small JSON and media is already compressed.
+const staticDir = path.join(__dirname, 'public');
+const gzipCache = new Map();
+const GZIP_STATIC = new Set(['/index.html', '/css/nexus.css', '/js/app.js', '/favicon.svg']);
+const STATIC_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.svg': 'image/svg+xml',
+};
+app.use((req, res, next) => {
+  const rel = req.path === '/' ? '/index.html' : req.path;
+  if (req.method !== 'GET' || !GZIP_STATIC.has(rel) ||
+      !/\bgzip\b/i.test(req.headers['accept-encoding'] || '')) return next();
+  const file = path.join(staticDir, rel);
+  let stat;
+  try { stat = fs.statSync(file); } catch { return next(); }
+  let entry = gzipCache.get(rel);
+  if (!entry || entry.mtime !== stat.mtimeMs) {
+    entry = { mtime: stat.mtimeMs, body: zlib.gzipSync(fs.readFileSync(file), { level: 6 }) };
+    gzipCache.set(rel, entry);
+  }
+  res.setHeader('Content-Type', STATIC_TYPES[path.extname(rel)] || 'application/octet-stream');
+  res.setHeader('Content-Encoding', 'gzip');
+  res.setHeader('Vary', 'Accept-Encoding');
+  res.setHeader('Cache-Control', rel === '/index.html'
+    ? 'no-cache'
+    : 'public, max-age=31536000, immutable');
+  res.end(entry.body);
+});
+
+app.use(express.static(staticDir, {
+  setHeaders(res, filePath) {
+    res.setHeader('Cache-Control', /\.html$/.test(filePath)
+      ? 'no-cache'
+      : /\.(css|js|svg|woff2?)$/.test(filePath)
+        ? 'public, max-age=31536000, immutable'
+        : 'public, max-age=3600');
+  },
+}));
 
 // ── Auth routes (must be registered before the /api gate) ──
 app.post('/api/auth/login', auth.loginHandler);
@@ -486,37 +535,50 @@ function realExtOf(filename) {
 // downloaded; the original is never touched.
 const THUMB_TARGET_PX = 320;
 
-function pickThumbVariant(variants) {
+function mediaVariants(media) {
+  if (!media) return [];
+  if (!media.document && media.photo) {
+    return (media.photo.sizes || []).filter(s => s.type);
+  }
+  const doc = media.document;
+  if (!doc) return [];
+  return doc.thumbs || (doc.thumbnail ? [doc.thumbnail] : []);
+}
+
+// PhotoCachedSize has no w/h — sorting it by byte count against real pixel
+// widths is meaningless, so it only ever wins when nothing else exists.
+function usableVariants(variants) {
   const usable = variants.filter(v => v && !Array.isArray(v.bytes));
-  if (usable.length === 0) return null;
+  return usable.sort((a, b) =>
+    (Math.max(a.w || 0, a.h || 0) || Number(a.size) || 0) -
+    (Math.max(b.w || 0, b.h || 0) || Number(b.size) || 0));
+}
 
-  const longEdge = v => Math.max(v.w || 0, v.h || 0);
-  const weight = v => longEdge(v) || Number(v.size) || 0;
-  const sorted = [...usable].sort((a, b) => weight(a) - weight(b));
+function pickThumbVariant(variants) {
+  const sorted = usableVariants(variants);
+  if (sorted.length === 0) return null;
+  return sorted.find(v => Math.max(v.w || 0, v.h || 0) >= THUMB_TARGET_PX) || sorted[sorted.length - 1];
+}
 
-  // A variant with no dimensions at all (a bare PhotoCachedSize) sorts by byte
-  // count, which is not comparable to pixels — so it only ever wins as the
-  // last resort below, never as a "covers the target" match.
-  return sorted.find(v => longEdge(v) >= THUMB_TARGET_PX) || sorted[sorted.length - 1];
+// The middle tier of the image pipeline. Telegram already hosts several
+// pre-rendered sizes per photo; taking the largest bounded one costs a few
+// dozen KB and no CPU at all, which matters on a 512 MB VPS where Sharp cannot
+// run. PhotoSizeProgressive variants are skipped: their `bytes` array means
+// the full image is streamed in slices, defeating the whole point.
+function pickMediumVariant(variants) {
+  const sorted = usableVariants(variants).filter(v => Math.max(v.w || 0, v.h || 0) > 0);
+  if (sorted.length === 0) return null;
+  return sorted[sorted.length - 1];
 }
 
 function getSmallestThumb(media) {
-  if (!media) return null;
+  const variants = usableVariants(mediaVariants(media));
+  return variants.length ? pickThumbVariant(variants) : null;
+}
 
-  // A photo (MessageMediaPhoto) carries its variants directly in `sizes`
-  // instead of a `thumbs` list on a document. Without this branch the thumbnail
-  // route fell straight through to the Sharp path for every synced photo —
-  // downloading the full-resolution image just to shrink it — even though
-  // Telegram already hosts a small variant.
-  if (!media.document && media.photo) {
-    return pickThumbVariant((media.photo.sizes || []).filter(s => s.type));
-  }
-
-  const doc = media.document;
-  if (!doc) return null;
-  const thumbs = doc.thumbs || [];
-  if (thumbs.length === 0) return doc.thumbnail || doc.thumb || null;
-  return pickThumbVariant(thumbs);
+function getMediumThumb(media) {
+  const variants = usableVariants(mediaVariants(media));
+  return variants.length ? (pickMediumVariant(variants) || variants[variants.length - 1]) : null;
 }
 
 /* The preview pane decides what to render from this, so the map has to cover
@@ -814,9 +876,12 @@ async function ensureMergedCache(fileKey, parts, baseName) {
   });
 }
 
-async function downloadTelegramThumb(message) {
-  if (!message || !message.media) return null;
-  const thumbObj = getSmallestThumb(message.media);
+async function downloadTelegramThumb(message, options) {
+  const media = message && message.media;
+  if (!media) return null;
+  const pick = options && options.pick;
+  const maxBytes = options && options.maxBytes ? options.maxBytes : 500 * 1024;
+  const thumbObj = pick ? pick(media) : getSmallestThumb(media);
   if (!thumbObj) return null;
   try {
     await ensureConnection();
@@ -826,12 +891,10 @@ async function downloadTelegramThumb(message) {
     // the grid slow and what made every PDF thumbnail 404: the fallback path
     // downloaded the original a second time for images, and gave up for
     // anything else. See node_modules/telegram/client/downloads.d.ts:136.
-    const buf = await client.downloadMedia(message.media, { thumb: thumbObj });
-    if (buf && buf.length > 0 && buf.length < 500 * 1024) {
-      return buf;
-    }
+    const buf = await client.downloadMedia(media, { thumb: thumbObj });
+    if (buf && buf.length > 0 && buf.length < maxBytes) return buf;
   } catch (err) {
-    console.error('Failed to download smallest thumbnail object:', err.message);
+    console.error('Failed to download Telegram image variant:', err.message);
   }
   return null;
 }
@@ -1937,6 +2000,75 @@ app.get('/api/thumb/:fileKey', checkConfig, async (req, res) => {
   }
 });
 
+// 6a. Middle tier for images. Sharp is disabled on the 512 MB Botkeep plan, so
+// instead of decoding an original we ask Telegram for the largest pre-rendered
+// variant it already keeps. Typical cost is tens of KB and zero CPU. The lightbox
+// loads this on open; the full original is only fetched later, for the one photo
+// actually being viewed.
+const MEDIUM_MAX_BYTES = Number(process.env.MEDIUM_MAX_BYTES) || 2 * 1024 * 1024;
+
+app.get('/api/medium/:fileKey', checkConfig, async (req, res) => {
+  const fileKey = req.params.fileKey;
+  try {
+    const file = db.getFile(fileKey);
+    if (!file) return res.status(404).end();
+    const cached = path.join(thumbDir, `${fileKey}.medium.jpg`);
+    if (fs.existsSync(cached)) return sendCachedThumb(res, cached);
+    if (!file.telegram_media_id) return sendNoThumb(res);
+
+    const built = await dedupeCacheWork(`medium:${fileKey}`, async () => {
+      await acquireThumbSlot();
+      try {
+        await ensureConnection();
+        const messages = await client.getMessages(config.chatId, {
+          ids: [parseInt(file.telegram_media_id, 10)],
+        });
+        const msg = messages && messages[0];
+        if (!msg || !msg.media) return null;
+        const buf = await downloadTelegramThumb(msg, {
+          pick: getMediumThumb,
+          maxBytes: MEDIUM_MAX_BYTES,
+        });
+        if (!buf) return null;
+        fs.writeFileSync(cached, buf);
+        return cached;
+      } finally {
+        releaseThumbSlot();
+      }
+    });
+
+    if (!built) return sendNoThumb(res);
+    return sendCachedThumb(res, built);
+  } catch (err) {
+    console.error('Medium image error:', err.message);
+    if (!res.headersSent) res.status(404).end();
+  }
+});
+
+// 6b. Full-resolution original, inline. /api/download-original forces an
+// attachment, and /api/preview either downloads the whole original up front or
+// recompresses it. This endpoint is called only after the user has lingered on
+// one photo, so no other card ever pays for it.
+app.get('/api/full/:fileKey', checkConfig, async (req, res) => {
+  const fileKey = req.params.fileKey;
+  try {
+    const resolved = await resolveFileParts(fileKey);
+    if (!resolved) return res.status(404).end();
+    const { file, parts, baseName, isSplit } = resolved;
+    if (!file.telegram_media_id) return res.status(400).json({ error: 'Berkas lama tidak didukung.' });
+    const targetPath = isSplit
+      ? await ensureMergedCache(fileKey, parts, baseName)
+      : await ensureCachedOriginal(file, fileKey, baseName, 'full-image');
+    res.setHeader('Content-Type', getMimeTypeByFilename(baseName));
+    res.setHeader('Content-Disposition', "inline; filename*=UTF-8''" + encodeURIComponent(baseName));
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return sendCacheFile(res, targetPath);
+  } catch (err) {
+    console.error('Full image error:', err.message);
+    if (!res.headersSent) res.status(500).end();
+  }
+});
+
 // 7. Preview (with image compression for images)
 app.get('/api/preview/:fileKey', checkConfig, async (req, res) => {
   const { fileKey } = req.params;
@@ -2273,8 +2405,39 @@ app.post('/api/sync', checkConfig, async (req, res) => {
 const SYNC_BATCH = Math.max(10, Number(process.env.SYNC_BATCH) || 25);
 const SYNC_MAX_RETRIES = 3;      // per batch, for errors that are not FLOOD_WAIT
 const SYNC_MAX_FLOOD_WAIT = 300; // seconds; longer than this and we give up rather than hang
+const SYNC_THUMB_WARM_LIMIT = Math.max(0, Number(process.env.SYNC_THUMB_WARM_LIMIT) || 60);
+
+// Newly synced files have no on-disk thumb, so the first grid visit used to
+// download them one by one from Telegram while the user watched skeletons.
+// The message media is already in hand during sync — cache its native thumb
+// right there, slowly and with a hard cap, so opening the drive is cheap.
+function warmThumbnails(queue) {
+  if (!queue.length) return;
+  setImmediate(async () => {
+    let done = 0;
+    for (const item of queue) {
+      const target = path.join(thumbDir, `${item.fileKey}.jpg`);
+      try {
+        if (fs.existsSync(target)) continue;
+        await acquireThumbSlot();
+        let buf;
+        try { buf = await downloadTelegramThumb({ media: item.media }); }
+        finally { releaseThumbSlot(); }
+        if (!buf) continue;
+        fs.writeFileSync(target, buf);
+        db.updateFileThumb(item.fileKey, 'local_cached');
+        done++;
+      } catch (err) {
+        console.error(`Thumb warmup ${item.fileKey}: ${err.message}`);
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+    console.log(`Thumb warmup selesai: ${done} thumbnail dari ${queue.length} antrean.`);
+  });
+}
 
 async function syncAllFromChannel() {
+  const warmQueue = [];
   let added = 0;
   let skipped = 0;
   let scanned = 0;
@@ -2361,6 +2524,9 @@ async function syncAllFromChannel() {
           info.dcId
         );
         added++;
+        if (msg.media && warmQueue.length < SYNC_THUMB_WARM_LIMIT) {
+          warmQueue.push({ fileKey, media: msg.media });
+        }
       } catch (msgErr) {
         errors++;
         console.error(`Error syncing message ID ${msg.id}:`, msgErr.message);
@@ -2381,6 +2547,8 @@ async function syncAllFromChannel() {
     // Small delay to avoid rate limiting
     await new Promise(r => setTimeout(r, 200));
   }
+
+  warmThumbnails(warmQueue);
 
   const result = { added, skipped, scanned, errors };
   syncProgress = { ...result, finishedAt: new Date().toISOString(), aborted: null };
@@ -2412,19 +2580,20 @@ app.get('*', (req, res) => {
 // ── Runtime cache eviction ──────────────────────────────────
 
 function pruneCacheDir() {
-  try {
-    const result = pruneCacheDirectories({
-      directories: [cacheDir, thumbDir],
-      maxBytes: CACHE_MAX_BYTES,
-      maxAgeMs: CACHE_MAX_AGE_MS,
-      inFlightPaths: new Set([...inFlightCache.keys(), ...activeCacheFiles.keys()]),
-    });
-
-    if (result.removedFiles > 0) {
-      console.log(`Cache prune: removed ${result.removedFiles} file(s), freed ${(result.removedBytes / 1024 / 1024).toFixed(1)} MB`);
+  const inFlight = new Set([...inFlightCache.keys(), ...activeCacheFiles.keys()]);
+  const pools = [
+    { name: 'media', directories: [cacheDir], maxBytes: CACHE_MAX_BYTES, maxAgeMs: CACHE_MAX_AGE_MS },
+    { name: 'thumb', directories: [thumbDir], maxBytes: THUMB_MAX_BYTES, maxAgeMs: THUMB_MAX_AGE_MS },
+  ];
+  for (const pool of pools) {
+    try {
+      const result = pruneCacheDirectories({ ...pool, inFlightPaths: inFlight });
+      if (result.removedFiles > 0) {
+        console.log(`Cache prune (${pool.name}): removed ${result.removedFiles} file(s), freed ${(result.removedBytes / 1024 / 1024).toFixed(1)} MB`);
+      }
+    } catch (err) {
+      console.error(`Cache prune error (${pool.name}):`, err.message);
     }
-  } catch (err) {
-    console.error('Cache prune error:', err.message);
   }
 }
 
