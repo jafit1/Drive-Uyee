@@ -119,6 +119,14 @@ app.use(express.static(staticDir, {
   },
 }));
 
+// Public design system: readable page + the markdown it describes.
+app.get('/design', (req, res) => res.sendFile(path.join(staticDir, 'design.html')));
+app.get('/design.md', (req, res) => {
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(path.join(__dirname, 'DESIGN.md'));
+});
+
 // ── Auth routes (must be registered before the /api gate) ──
 app.post('/api/auth/login', auth.loginHandler);
 app.post('/api/auth/logout', auth.logoutHandler);

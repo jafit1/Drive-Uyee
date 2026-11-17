@@ -40,6 +40,10 @@ curl -s -b /tmp/drive.cookie http://127.0.0.1:3000/api/files \
 
 The endpoint is idempotent: files that already have a cached thumbnail return immediately.
 
+## Design system
+
+`DESIGN.md` is the visual contract for the project: colour tokens, type scale, spacing, responsive grid, component rules, motion, accessibility and anti-patterns. It is served publicly at `/design.md`, with a live, mobile-first reference page at `/design`.
+
 ## Commands
 
 ```
