@@ -1786,7 +1786,10 @@ function thumbContentType(filePath) {
 }
 
 function sendCachedThumb(res, filePath) {
-  res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+  // A file_key never changes, so its derivative is immutable. Browser and
+  // service-worker caches can keep it forever without a single revalidation;
+  // a fresh file always arrives under a fresh key.
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   res.setHeader('Content-Type', thumbContentType(filePath));
   return sendCacheFile(res, filePath);
 }
