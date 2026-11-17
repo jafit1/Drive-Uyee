@@ -67,8 +67,9 @@ module.exports = {
       },
 
       borderRadius: {
-        card: '16px',
-        control: '12px',
+        card: '8px',
+        control: '8px',
+        pill: '9999px',
       },
 
       // Mirrors the stack applied to <body> in src/styles/base.css so

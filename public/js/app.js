@@ -583,7 +583,12 @@ function renderInBatches(files, container, token, renderItem) {
     if (token !== state.renderToken || !container.isConnected) return;
     var fragment = document.createDocumentFragment();
     var end = Math.min(index + FILE_PAGE_SIZE, shown);
-    while (index < end) fragment.appendChild(renderItem(files[index++]));
+    while (index < end) {
+      var el = renderItem(files[index++]);
+      el.classList.add('rise-in');
+      el.style.animationDelay = Math.min(index % 16, 15) * 30 + 'ms';
+      fragment.appendChild(el);
+    }
     container.appendChild(fragment);
     if (index < shown) requestAnimationFrame(appendBatch);
   }
@@ -604,7 +609,12 @@ function attachLoadSentinel(files, container, token, renderItem, shown) {
     sentinel.onclick = function () {
       var next = Math.min(shown + FILE_PAGE_SIZE, files.length);
       var frag = document.createDocumentFragment();
-      for (var i = shown; i < next; i++) frag.appendChild(renderItem(files[i]));
+      for (var i = shown; i < next; i++) {
+        var el = renderItem(files[i]);
+        el.classList.add('rise-in');
+        el.style.animationDelay = Math.min((i - shown) % 16, 15) * 30 + 'ms';
+        frag.appendChild(el);
+      }
       container.appendChild(frag);
       state.visibleCount = next;
       sentinel.remove();

@@ -10,73 +10,74 @@
    script in public/index.html which stamps `.dark` on <html>.
    ========================================================================== */
 
+/* Palette adapted from the Aether reference: near-black ground, one white
+   accent, warm off-white reserved for inverted blocks, and a single 8px radius
+   across cards and controls. The light block is a companion theme, not a second
+   design language — same geometry, same mono labels, same restraint. */
 :root {
-  --c-bg: 250 250 250;            /* neutral-50  — page ground */
-  --c-surface: 255 255 255;       /* white       — cards, panels, menus */
-  --c-subtle: 245 245 245;        /* neutral-100 — inputs, wells, hover */
-  --c-border: 229 231 235;        /* neutral-200 */
-  --c-border-strong: 209 213 219; /* neutral-300 — bottom edge of raised parts */
-  --c-text: 23 23 23;             /* neutral-900 */
-  --c-text-muted: 115 115 115;    /* neutral-500 */
-  --c-iron: 64 64 64;             /* neutral-700 */
-  --c-fog: 163 163 163;           /* neutral-400 */
-  --c-ash: 191 191 191;           /* neutral-300 — disabled fills */
+  --c-bg: 244 244 244;            /* #F4F4F4 — surface token of the reference */
+  --c-surface: 255 255 255;
+  --c-subtle: 236 236 236;
+  --c-border: 212 212 216;
+  --c-border-strong: 161 161 170;
+  --c-text: 17 17 17;             /* #111111 */
+  --c-text-muted: 82 82 91;
+  --c-iron: 64 64 64;
+  --c-fog: 113 113 122;
+  --c-ash: 161 161 170;
+  --c-inverse: 17 17 17;
+  --c-on-inverse: 255 255 255;
 
-  /* Semantic status — deliberately independent of the accent so "danger" never
-     inherits a brand-colour change. */
-  --c-success: 34 197 94;
-  --c-danger: 239 68 68;
-  --c-warning: 245 158 11;
+  --c-success: 22 163 74;
+  --c-danger: 220 38 38;
+  --c-warning: 202 138 4;
 
-  /* Accent — the single brand colour. Primary actions, active states, focus
-     rings and progress. Everything else stays neutral so the accent always
-     reads as "this is the thing to click". */
-  --c-accent: 37 99 235;          /* blue-600 */
-  --c-accent-hover: 29 78 216;    /* blue-700 */
-  --c-accent-soft: 219 234 254;   /* blue-100 */
+  --c-accent: 17 17 17;
+  --c-accent-hover: 39 39 42;
+  --c-accent-soft: 228 228 231;
   --c-on-accent: 255 255 255;
 
-  --radius: 16px;
-  --radius-sm: 12px;
+  --radius: 8px;
+  --radius-sm: 8px;
   --radius-xs: 8px;
 
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
-  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 6px -2px rgb(0 0 0 / 0.04);
-  --shadow-lg: 0 16px 32px -8px rgb(0 0 0 / 0.12), 0 6px 12px -4px rgb(0 0 0 / 0.06);
-  --shadow-xl: 0 28px 56px -12px rgb(0 0 0 / 0.16);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 2px 8px -2px rgb(0 0 0 / 0.08);
+  --shadow-md: 0 8px 20px -6px rgb(0 0 0 / 0.10);
+  --shadow-lg: 0 16px 36px -10px rgb(0 0 0 / 0.14);
+  --shadow-xl: 0 28px 56px -12px rgb(0 0 0 / 0.18);
 
   color-scheme: light;
 }
 
 .dark {
-  --c-bg: 10 10 12;               /* near-black */
-  --c-surface: 24 24 27;          /* zinc-900 */
-  --c-subtle: 38 38 42;           /* zinc-800 */
-  --c-border: 52 52 56;           /* zinc-700/50 */
-  --c-border-strong: 72 72 80;    /* zinc-600 */
-  --c-text: 244 244 245;          /* zinc-100 */
-  --c-text-muted: 161 161 170;    /* zinc-400 */
-  --c-iron: 212 212 216;          /* zinc-300 */
-  --c-fog: 113 113 122;           /* zinc-500 */
-  --c-ash: 82 82 91;              /* zinc-600 */
+  --c-bg: 5 5 5;                  /* #050505 */
+  --c-surface: 17 17 17;          /* #111111 */
+  --c-subtle: 26 26 29;
+  --c-border: 39 39 42;           /* #27272A */
+  --c-border-strong: 63 63 70;
+  --c-text: 255 255 255;          /* #FFFFFF */
+  --c-text-muted: 161 161 170;    /* #A1A1AA */
+  --c-iron: 212 212 216;
+  --c-fog: 113 113 122;
+  --c-ash: 82 82 91;
+  --c-inverse: 244 244 244;
+  --c-on-inverse: 17 17 17;
 
   --c-success: 74 222 128;
   --c-danger: 248 113 113;
   --c-warning: 251 191 36;
 
-  /* Brighter accent so it survives the dark surface, but still dark enough that
-     pure-white label text keeps AA contrast. */
-  --c-accent: 59 130 246;         /* blue-500 */
-  --c-accent-hover: 96 165 250;   /* blue-400 */
-  --c-accent-soft: 30 58 138;     /* blue-900 */
-  --c-on-accent: 255 255 255;
+  --c-accent: 255 255 255;
+  --c-accent-hover: 228 228 231;
+  --c-accent-soft: 39 39 42;
+  --c-on-accent: 17 17 17;
 
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.2);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.2);
-  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.3), 0 2px 6px -2px rgb(0 0 0 / 0.2);
-  --shadow-lg: 0 16px 32px -8px rgb(0 0 0 / 0.35), 0 6px 12px -4px rgb(0 0 0 / 0.2);
-  --shadow-xl: 0 28px 56px -12px rgb(0 0 0 / 0.4);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-sm: 0 2px 8px -2px rgb(0 0 0 / 0.6);
+  --shadow-md: 0 8px 20px -6px rgb(0 0 0 / 0.7);
+  --shadow-lg: 0 16px 36px -10px rgb(0 0 0 / 0.75);
+  --shadow-xl: 0 28px 56px -12px rgb(0 0 0 / 0.8);
 
   color-scheme: dark;
 }

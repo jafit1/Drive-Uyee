@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#171717">
+  <meta name="theme-color" content="#050505">
   <title>Drive Uyee — Telegram Cloud Storage</title>
   <meta name="description" content="Unlimited cloud drive powered by Telegram. Fast, secure, free.">
 
@@ -19,13 +19,13 @@
     (function () {
       try {
         var s = localStorage.getItem('drive-theme');
-        var d = s ? s === 'dark' : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var d = s ? s === 'dark' : true;
         if (d) document.documentElement.classList.add('dark');
       } catch (e) {}
     })();
   </script>
 
-  <link rel="stylesheet" href="/css/nexus.css?v=botkeep-thumbs-6">
+  <link rel="stylesheet" href="/css/nexus.css?v=aether-v1">
 </head>
 <body class="antialiased">
 
@@ -749,7 +749,7 @@
     })();
   </script>
 
-   <script src="js/app.js?v=botkeep-thumbs-6"></script>
+   <script src="js/app.js?v=aether-v1"></script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {

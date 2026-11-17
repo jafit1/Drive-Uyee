@@ -1,136 +1,136 @@
-# Drive Uyee — Design System
+---
+version: "aether-adapted-v1"
+name: "Drive Uyee — Aether Frontier"
+description: "Adaptasi Aether - The New Frontier untuk antarmuka Drive Uyee. Dark editorial, satu aksen putih, label mono, radius 8px, dan ritme bento yang tetap ringan di ponsel."
+source: "Aether - The New Frontier — Sourasith Phomhome (@madebysourasith)"
+colors:
+  primary: "#FFFFFF"
+  secondary: "#111111"
+  accent: "#FFFFFF"
+  background: "#050505"
+  surface: "#111111"
+  inverted: "#F4F4F4"
+  text-primary: "#FFFFFF"
+  text-secondary: "#A1A1AA"
+  border: "#27272A"
+typography:
+  display:
+    fontFamily: "Inter"
+    fontSize: "64px"
+    fontWeight: 500
+    lineHeight: "1.04"
+    letterSpacing: "-0.03em"
+  body:
+    fontFamily: "Inter"
+    fontSize: "16px"
+    fontWeight: 400
+    lineHeight: "1.6"
+  label:
+    fontFamily: "JetBrains Mono"
+    fontSize: "12px"
+    fontWeight: 600
+    letterSpacing: "0.08em"
+    textTransform: "uppercase"
+spacing:
+  base: "8px"
+  gap: "16px"
+  card-padding: "24px"
+  section-padding: "80px"
+rounded:
+  card: "8px"
+  control: "8px"
+  pill: "9999px"
+---
 
-Dokumen ini adalah kontrak visual untuk Drive Uyee. Tujuannya bukan membuat antarmuka yang ramai, tetapi membuat antarmuka yang **cepat dibaca, cepat dipakai, dan tidak pernah menghalangi berkas**.
+# Drive Uyee — Aether Frontier
 
-## 1. Prinsip
+Adaptasi dari **Aether — The New Frontier** untuk drive berbasis Telegram. Referensi aslinya memakai `#050505` sebagai ground, `#FFFFFF` sebagai satu-satunya aksen, `#F4F4F4` sebagai permukaan invers, label monospace, dan radius 8px. Drive Uyee meminjam bahasa itu tanpa mengubah cara kerja aplikasi.
 
-1. **Berkas adalah konten utama.** Chrome antarmuka tunduk pada grid, bukan sebaliknya.
-2. **Kecepatan terasa sebelum terlihat.** Skeleton, thumbnail 400px, dan transisi pendek lebih penting daripada ilustrasi.
-3. **Satu aksi per kontrol.** Tombol melakukan satu hal. Tidak ada menu bersarang di toolbar utama.
-4. **Tenang.** Satu aksen, satu hierarki, satu ritme. Tidak ada dekorasi yang berdiri sendiri.
-5. **Mobile adalah baseline.** Desain untuk 360px dulu; desktop hanya menambah kolom.
+## Prinsip
 
-## 2. Warna
+1. **Dark adalah default.** `#050505` bukan sekadar opsi tema; itu kondisi awal aplikasi. Tema terang adalah companion dengan geometri yang sama, bukan desain kedua.
+2. **Satu aksen: putih.** Tombol utama putih dengan teks `#111111`. Biru, hijau, dan merah hanya untuk status, bukan dekorasi.
+3. **Label mono, copy Inter.** Metadata teknis (`01-A. // STORAGE`, ukuran, tanggal, ekstensi) pakai JetBrains Mono 12px 600 uppercase. Kalimat pakai Inter.
+4. **Radius 8px, tanpa pengecualian.** Kartu, input, tombol, dan modal memakai radius yang sama. Pill hanya untuk status.
+5. **Ritme bento, bukan dashboard generik.** Blok boleh berbeda ukuran, tetapi tidak boleh berubah menjadi sidebar + kartu statistik + grafik.
 
-Semua warna didefinisikan sebagai tripel `R G B` di `src/styles/tokens.css` supaya bisa dipakai sebagai `rgb(var(--c-x))` dan `rgb(var(--c-x) / alpha)`.
+## Warna
 
-| Token | Terang | Gelap | Pakai untuk |
+| Token | Dark (default) | Companion terang | Peran |
 | --- | --- | --- | --- |
-| `--c-bg` | `250 250 250` | `17 17 17` | Latar halaman |
-| `--c-surface` | `255 255 255` | `28 28 30` | Kartu, panel, modal |
-| `--c-subtle` | `245 245 245` | `38 38 41` | Input, well, hover |
-| `--c-border` | `229 231 235` | `58 58 62` | Garis kartu |
-| `--c-text` | `23 23 23` | `244 244 245` | Judul, nama berkas |
-| `--c-text-muted` | `115 115 115` | `163 163 166` | Meta, caption |
-| `--c-accent` | biru jenuh | biru jenuh | Fokus, aktif, aksi utama |
-| `--c-success` | `34 197 94` | sama | Sync sukses |
-| `--c-danger` | `239 68 68` | sama | Hapus, error |
+| `bg` | `#050505` | `#F4F4F4` | Latar halaman |
+| `surface` | `#111111` | `#FFFFFF` | Kartu, panel, input |
+| `subtle` | `#1A1A1D` | `#ECECEC` | Hover, well |
+| `border` | `#27272A` | `#D4D4D8` | Garis 1px |
+| `text` | `#FFFFFF` | `#111111` | Nama berkas, judul |
+| `text-muted` | `#A1A1AA` | `#52525B` | Meta, caption |
+| `accent` | `#FFFFFF` | `#111111` | Aksi utama, fokus |
+| `on-accent` | `#111111` | `#FFFFFF` | Teks di atas aksi |
+| `inverse` | `#F4F4F4` | `#111111` | Blok sorotan |
 
-Aturan: teks di atas `--c-surface` minimal kontras 4,5:1. Jangan pakai warna semantik untuk dekorasi. Status hanya lewat warna + ikon + teks, bukan warna saja.
+Aturan: teks di atas `surface` minimal 4,5:1. Jangan menaruh teks putih di atas `inverse`. Status tetap warna + ikon + teks.
 
-## 3. Tipografi
+## Tipografi
 
-Font utama: `"Inter", "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`. Jangan memuat font dari CDN — sistem fallback sudah cukup dan menghilangkan render-blocking request.
+- **Display** — Inter 64px / 500 / 1.04 / `-0.03em`. Dipakai untuk moment judul, bukan untuk nama berkas.
+- **Body** — Inter 16px / 400 / 1.6.
+- **Label** — JetBrains Mono 12px / 600 / `0.08em` uppercase.
+- **Nama berkas** — Inter 13px / 600, satu baris, ellipsis.
+- **Meta** — JetBrains Mono 11px / 500, warna `text-muted`.
 
-| Peran | Ukuran | Berat | Letter spacing |
-| --- | --- | --- | --- |
-| Halaman / wizard | 24px | 600 | `-0.02em` |
-| Judul panel | 16px | 600 | normal |
-| Nama berkas | 13px | 600 | normal |
-| Meta | 11px | 500 | `0.01em` |
-| Kode / angka | 11–12px | 500 | `ui-monospace` |
+Font tidak dimuat dari CDN. Fallback sistem dipakai bila Inter/JetBrains Mono tidak terpasang.
 
-Bahasa: Indonesia, huruf kecil untuk bicara, huruf besar hanya untuk deliverable dan label proper. Maksimal dua baris nama berkas sebelum truncate dengan ellipsis.
+## Spasi & radius
 
-## 4. Spacing & ritme
+Grid 8px. Gap 16px. Padding kartu 24px. Padding seksi 80px di desktop, 40px di ponsel. Radius `8px` untuk kartu dan kontrol, `9999px` untuk pill status.
 
-Grid 4px. Skala: `4, 8, 12, 16, 24, 32`.
+Bayangan dibuat tipis dan gelap, tidak mengambang. Di dark mode cukup `0 2px 8px -2px rgb(0 0 0 / .6)`. Jangan menumpuk tiga layer shadow.
 
-- Kartu grid: padding 12px, gap 8–12px.
-- Toolbar: padding 10px 14px, gap 8px, tinggi target 40px.
-- Modal: padding 24–32px, radius 16px.
-- Jarak antar grup di panel: 24px.
+## Layout
 
-Jangan menambah padding untuk "biar lega" tanpa mengubah hierarchy. Gunakan warna latar dan garis.
+Grid berkas tetap 2 kolom di ponsel sampai 6 di desktop. Yang berubah dari referensi adalah kepadatan: kartuDrive disusun rapat agar thumbnail lebih banyak terlihat, sekarang dengan border `#27272A` dan sudut 8px.
 
-## 5. Layout responsif
+Toolbar melekat, filter menyatu, target sentuh minimal 44px. Di layar sempit, filter ekstensi masuk tombol "Filter". Lightbox memakai latar `#050505` dengan control putih.
 
-| Lebar | Kolom grid |
-| --- | --- |
-| < 360px | 2 |
-| 360–429px | 2 |
-| 430–639px | 3 |
-| 640–767px | 3 |
-| 768–1023px | 4 |
-| 1024–1279px | 5 |
-| ≥ 1280px | 6 |
+## Komponen
 
-Aturan mobile:
+**Kartu berkas** — surface `#111111`, border 1px `#27272A`, radius 8px, thumbnail 1:1 `object-fit: cover`. Hover mengangkat 2px. Thumbnail gagal → ikon SVG + ekstensi mono, bukan kotak kosong.
 
-- Toolbar melekat di atas (sticky), bukan ikut scroll.
-- Target sentuh minimal 44 × 44px, termasuk checkbox.
-- Area aman: `env(safe-area-inset-bottom)` pada bulk bar dan lightbox.
-- Tidak ada overflow horizontal. Nama panjang dipotong, bukan mendorong kartu.
-- Grid dirender 48 kartu pertama, sisanya di-append saat scroll.
-- Lightbox: swipe kiri/kanan berpindah foto hanya saat zoom = 1.
+**Tombol** — primer: latar putih, teks `#111111`, radius 8px. Sekunder: transparan, border `#27272A`, teks putih. Ikon-only tetap punya `aria-label`.
 
-## 6. Komponen
+**Label teknis** — `01-A. // STORAGE`, `EST. 2025`, ukuran berkas, dan indeks lightbox memakai mono uppercase. Label adalah metadata, bukan kicker di atas judul.
 
-### Kartu berkas
-Bentuk persegi dengan thumbnail 1:1, nama 1 baris, meta ukuran + tanggal. Hover mengangkat 2px dan bayangan tipis. Thumbnail gagal → ikon tipe + ekstensi, bukan kotak kosong.
+**Badge status** — pill 9999px, latar `accent-soft`, teks `text-muted`, satu ikon kecil. Warna status hanya ditambahkan bila ada perubahan nyata.
 
-### Thumbnail
-WebP 400px, `object-fit: cover`, skeleton shimmer saat memuat, fade 0,22s saat selesai. `loading="lazy"`, `decoding="async"`, `fetchpriority="low"`.
+**Lightbox** — tiga tingkat seperti sebelumnya: thumb blur → medium WebP → original. Perpindahan memakai focus-pull 280ms. Latar stage `#050505`, nav button white-on-black.
 
-### Lightbox
-Tiga tingkat: thumb blur → medium WebP 1600px → original penuh setelah 2,5 detik idle atau tombol "Muat versi penuh". Perpindahan memakai focus-pull 0,28s, bukan cut.
+## Motion
 
-### Toolbar
-Pencarian mengambil sisa ruang. Sort, ukuran, dan filter ekstensi bersampingan. Di layar sempit, filter ekstensi disembunyikan di balik tombol "Filter" — jangan memaksa empat kontrol dalam satu baris 360px.
+- Entrance: masked reveal + stagger 40ms per kartu, durasi 420ms, `cubic-bezier(.22,1,.36,1)`.
+- Hover kartu/tombol: 180ms, `cubic-bezier(.2,.7,.2,1)`.
+- Focus-pull gambar: 280ms.
+- Perpindahan tema: 420ms, hanya properti warna.
+- Semua animasi mati di `prefers-reduced-motion: reduce`.
 
-### Status
-Toast muncul 3,5 detik, error 6 detik. Satu toast aktif. Loader memakai lima bar, bukan spinner melingkar baru.
+Jangan animasi `width`, `height`, atau `top`. Jangan menambah partikel atau WebGL — referensi boleh atmosferik, drive tidak boleh mengorbankan kecepatan.
 
-## 7. Motion
+## Guardrails
 
-| Keadaan | Durasi | Easing |
-| --- | --- | --- |
-| Hover kartu / tombol | 150–200ms | `cubic-bezier(.2,.7,.2,1)` |
-| Fade skeleton | 220–250ms | `ease` |
-| Focus-pull gambar | 280ms | `cubic-bezier(.2,.7,.2,1)` |
-| Masuk modal | 220ms | `cubic-bezier(.22,1,.36,1)` |
-| Pull-to-refresh / sync | 800ms sekali | `ease-in-out` |
+- Jangan meratakan ini menjadi card grid generik; pertahankan perbedaan skala tiap blok.
+- Jangan mengganti mode warna default; dark adalah identitas.
+- Jangan memakai biru sebagai aksen utama.
+- Jangan menambah eyebrow kicker di atas headline.
+- Jangan memakai emoji sebagai ikon.
+- Jangan menambah grafik tanpa data.
+- Pertahankan huruf kecil untuk bicara; huruf besar hanya untuk deliverable dan label teknis.
 
-Gunakan `transform` dan `opacity`. Jangan animasi `width`, `height`, `top`, atau `box-shadow` berulang. Semua animasi harus mati di `@media (prefers-reduced-motion: reduce)`.
+## Checklist
 
-## 8. Aksesibilitas
-
-- Setiap ikon-only button punya `aria-label`.
-- Focus ring terlihat: 2px accent + offset 2px.
-- Kontras teks ≥ 4,5:1, teks besar ≥ 3:1.
-- Informasistatus tidak hanya berwarna.
-- Urutan tab mengikuti urutan visual.
-- `Escape` menutup modal/lightbox; `←`/`→` berpindah foto.
-
-## 9. Anti-pattern
-
-Dilarang:
-
-- Gradient pada headline, teks two-tone, atau accent indigo default.
-- Bayangan besar mengambang, border pelangi, badge di atas hero.
-- Emoji sebagai ikon. Pakai SVG stroke 1.5–2px.
-- Dot-chart palsu, gauge dekoratif, grafik tanpa data.
-- Eyebrow kicker di atas judul.
-- Card dengan tiga warna latar berbeda dalam satu baris.
-- Menyalin pola dashboard generik: sidebar + kartu statistik + grafik.
-- Font CDN, animasi > 400ms untuk interaksi, atau skeleton tanpa akhir yang jelas.
-
-## 10. Checklist sebelum ship
-
-- [ ] Buka di 360px tanpa scroll horizontal.
-- [ ] Semua target sentuh ≥ 44px.
-- [ ] Thumbnail tampil atau fallback ikon tampil — tidak ada kotak kosong.
-- [ ] Hard reload tidak mengirim ulang request thumbnail (immutable + service worker).
-- [ ] `prefers-reduced-motion` dinonaktifkan dan masih bisa dipakai.
-- [ ] Kontras lulus, focus ring terlihat.
-- [ ] Tidak ada string kosakata basa-basi di UI.
+- [ ] Default load terlihat `#050505` dengan teks putih.
+- [ ] Tombol utama putih, teks gelap, radius 8px.
+- [ ] Label metadata mono 12px uppercase.
+- [ ] Kartu punya border `#27272A`, bukan bayangan tebal.
+- [ ] Grid 2 kolom di 360px tanpa overflow.
+- [ ] Thumbnail atau fallback ikon selalu tampil.
+- [ ] Entrance stagger tidak menghalangi interaksi pertama.
+- [ ] `prefers-reduced-motion` dinonaktifkan.

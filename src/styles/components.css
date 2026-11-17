@@ -656,7 +656,7 @@
 /* ─────────────────────────────────────────────────────────────
    ENTRANCE ANIMATION — keyframes live in base.css
    ───────────────────────────────────────────────────────────── */
-.rise-in { animation: riseIn .28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.rise-in { animation: riseIn .42s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 /* Lightbox quality control. Only rendered while an image is open; the full
    original is fetched on demand, never for the grid or for other photos. */
