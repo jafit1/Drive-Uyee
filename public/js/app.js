@@ -1280,6 +1280,104 @@ function lightboxDelete() {
 /* ─────────────────────────────────────────────────────────────
    UPLOAD
    ───────────────────────────────────────────────────────────── */
+/* The queue lives in IndexedDB, not in memory. A hard refresh used to drop
+   every File object and turn an 80-file batch into "Selesai" with nothing
+   uploaded; the blob is structured-cloneable, so it survives the reload and
+   the queue picks up where it left off. */
+var UPLOAD_DB = 'drive-uyee-uploads';
+var uploadDbPromise = null;
+
+function openUploadDb() {
+  if (uploadDbPromise) return uploadDbPromise;
+  uploadDbPromise = new Promise(function (resolve, reject) {
+    if (!window.indexedDB) return reject(new Error('IndexedDB unavailable'));
+    var req = indexedDB.open(UPLOAD_DB, 1);
+    req.onupgradeneeded = function () {
+      var db = req.result;
+      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'id' });
+    };
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };
+  });
+  return uploadDbPromise;
+}
+
+function idbWrite(store, value) {
+  return openUploadDb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(store, 'readwrite');
+      tx.objectStore(store).put(value);
+      tx.oncomplete = function () { resolve(); };
+      tx.onerror = function () { reject(tx.error); };
+    });
+  });
+}
+
+function idbRemove(store, id) {
+  return openUploadDb().then(function (db) {
+    return new Promise(function (resolve) {
+      var tx = db.transaction(store, 'readwrite');
+      tx.objectStore(store).delete(id);
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  });
+}
+
+function idbReadAll(store) {
+  return openUploadDb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(store, 'readonly');
+      var req = tx.objectStore(store).getAll();
+      req.onsuccess = function () { resolve(req.result || []); };
+      req.onerror = function () { reject(req.error); };
+    });
+  });
+}
+
+function saveUploadMeta(up, immediate) {
+  clearTimeout(up._saveTimer);
+  var meta = { id: up.id, status: up.status, progress: up.progress, error: up.error || '', updatedAt: Date.now() };
+  function write() { idbWrite('meta', meta).catch(function () {}); }
+  if (immediate) write();
+  else up._saveTimer = setTimeout(write, 350);
+}
+
+function forgetUpload(up) {
+  clearTimeout(up._saveTimer);
+  idbRemove('meta', up.id).catch(function () {});
+  idbRemove('files', up.id).catch(function () {});
+}
+
+function restoreUploadQueue() {
+  if (!window.indexedDB) return;
+  Promise.all([idbReadAll('files'), idbReadAll('meta')]).then(function (results) {
+    var files = results[0], metas = results[1];
+    var byId = {};
+    metas.forEach(function (m) { byId[m.id] = m; });
+    files.forEach(function (rec) {
+      var m = byId[rec.id] || {};
+      // Anything that was in flight when the tab died goes back to the queue.
+      var status = m.status === 'uploading' ? 'pending' : (m.status || 'pending');
+      state.uploads.push({
+        id: rec.id,
+        name: rec.name,
+        size: rec.size,
+        file: rec.file,
+        progress: status === 'done' ? 1 : (m.progress || 0),
+        status: status,
+        error: m.error || '',
+        addedAt: rec.addedAt || Date.now(),
+      });
+    });
+    if (!state.uploads.length) return;
+    showUploadPanel();
+    renderUploadItems();
+    pumpUploadQueue();
+  }).catch(function () {});
+}
+
 function handleFiles(fileList) {
   var files = Array.prototype.slice.call(fileList);
   if (files.length === 0) return;
@@ -1292,13 +1390,19 @@ function handleFiles(fileList) {
       progress: 0,
       status: 'pending',
       file: file,
+      addedAt: Date.now(),
     };
     state.uploads.push(upload);
+    idbWrite('files', {
+      id: upload.id, name: upload.name, size: upload.size,
+      file: file, addedAt: upload.addedAt,
+    }).catch(function () {});
+    saveUploadMeta(upload, true);
   });
 
   showUploadPanel();
   renderUploadItems();
-  processUploadQueue();
+  pumpUploadQueue();
 }
 
 /* Panel unggahan: muncul dan menghilang dengan geser+redup, bukan berkedip.
@@ -1343,6 +1447,18 @@ function hideUploadPanel(segera) {
   }, 240);
 }
 
+// Collapse state is persisted, so a hard refresh does not silently expand the
+// panel back over the grid.
+var UPLOAD_COLLAPSE_KEY = 'drive-upload-collapsed';
+function isUploadPanelCollapsed() {
+  try { return localStorage.getItem(UPLOAD_COLLAPSE_KEY) === '1'; } catch (e) { return false; }
+}
+function applyUploadCollapse(collapsed) {
+  try { localStorage.setItem(UPLOAD_COLLAPSE_KEY, collapsed ? '1' : '0'); } catch (e) {}
+  var panel = $('upload-panel');
+  if (panel) panel.classList.toggle('up-collapsed', !!collapsed);
+}
+
 // Dipanggil setelah semua unggahan selesai: beri jeda singkat supaya status
 // terakhir sempat terbaca, lalu tutup.
 function jadwalkanTutupPanelUnggahan() {
@@ -1365,8 +1481,27 @@ function renderUploadItems() {
   if (!container) return;
 
   var active = state.uploads.filter(function (u) { return u.status === 'pending' || u.status === 'uploading'; });
+  var doneCount = state.uploads.filter(function (u) { return u.status === 'done'; }).length;
+  var totalBytes = 0, sentBytes = 0;
+  state.uploads.forEach(function (u) {
+    var w = u.size || 1;
+    totalBytes += w;
+    sentBytes += (u.progress || 0) * w;
+  });
+  var pct = totalBytes ? Math.round(sentBytes / totalBytes * 100) : 0;
   var titleEl = $('upload-panel-title');
-  if (titleEl) titleEl.textContent = 'Unggah: ' + (active.length || state.uploads.length) + ' file';
+  var title = state.uploads.length
+    ? 'Unggah: ' + doneCount + '/' + state.uploads.length + ' · ' + pct + '%'
+    : 'Unggah: 0 file';
+  if (titleEl && titleEl.textContent !== title) titleEl.textContent = title;
+
+  var globalFill = $('up-global-fill');
+  if (globalFill) {
+    var width = pct + '%';
+    if (globalFill.style.width !== width) globalFill.style.width = width;
+    globalFill.style.backgroundColor = state.uploads.some(function (u) { return u.status === 'error'; })
+      ? 'rgb(var(--c-danger))' : 'rgb(var(--c-accent))';
+  }
 
   var pingEl = $('upload-panel-ping');
   if (pingEl) pingEl.classList.toggle('up-dot-idle', active.length > 0);
@@ -1400,6 +1535,7 @@ function renderUploadItems() {
         '<div class="up-row">' +
         '<span class="up-name"></span>' +
         '<span class="up-status"></span>' +
+        '<button class="up-retry hidden" type="button">Ulangi</button>' +
         '</div>' +
         '<div class="up-bar"><div class="up-fill"></div></div>';
       container.appendChild(div);
@@ -1425,6 +1561,12 @@ function updateUploadItem(up) {
   var statusEl = div.querySelector('.up-status');
   if (statusEl && statusEl.textContent !== statusText) statusEl.textContent = statusText;
 
+  var retryEl = div.querySelector('.up-retry');
+  if (retryEl) {
+    retryEl.classList.toggle('hidden', up.status !== 'error');
+    retryEl.onclick = function () { retryUpload(up.id); };
+  }
+
   var fillEl = div.querySelector('.up-fill');
   if (fillEl) {
     var lebar = (up.progress * 100) + '%';
@@ -1433,60 +1575,91 @@ function updateUploadItem(up) {
   }
 }
 
-var uploadInProgress = false;
-function processUploadQueue() {
-  if (uploadInProgress) return;
-  var next = state.uploads.find(function (u) { return u.status === 'pending'; });
-  if (!next) {
-    uploadInProgress = false;
-    // Semua berkas sudah diproses: segarkan daftar, lalu biarkan panel menutup
-    // sendiri sebentar kemudian.
-    var masihAdaYangGagal = state.uploads.some(function (u) { return u.status === 'error'; });
-    loadFiles();
-    if (!masihAdaYangGagal) jadwalkanTutupPanelUnggahan();
-    return;
-  }
+/* Three concurrent XHRs. One worker meant an 80-file batch queued 79 files
+   that could never start until the previous one had been fully stored by
+   Telegram; the host has spare bandwidth, so let it use it. */
+var UPLOAD_CONCURRENCY = 3;
+var uploadActive = 0;
 
-  uploadInProgress = true;
-  next.status = 'uploading';
-  updateUploadItem(next);
+function pumpUploadQueue() {
+  while (uploadActive < UPLOAD_CONCURRENCY) {
+    var next = state.uploads.find(function (u) { return u.status === 'pending'; });
+    if (!next) break;
+    startUpload(next);
+  }
+  renderUploadItems();
+  if (uploadActive > 0) return;
+  if (state.uploads.some(function (u) { return u.status === 'pending' || u.status === 'uploading'; })) return;
+  loadFiles();
+  var failed = state.uploads.some(function (u) { return u.status === 'error'; });
+  if (!failed && !isUploadPanelCollapsed()) jadwalkanTutupPanelUnggahan();
+}
+
+function startUpload(up) {
+  uploadActive++;
+  up.status = 'uploading';
+  saveUploadMeta(up, true);
+  updateUploadItem(up);
 
   var formData = new FormData();
-  formData.append('file', next.file, next.name);
+  formData.append('file', up.file, up.name);
 
   var xhr = new XMLHttpRequest();
   xhr.upload.addEventListener('progress', function (e) {
-    if (e.lengthComputable) {
-      next.progress = e.loaded / e.total;
-      updateUploadItem(next);
-    }
+    if (!e.lengthComputable) return;
+    up.progress = Math.min(1, e.loaded / e.total);
+    updateUploadItem(up);
+    saveUploadMeta(up);
   });
+
+  function settle(status, reason) {
+    up.status = status;
+    up.error = reason || '';
+    if (status === 'done') {
+      up.progress = 1;
+      forgetUpload(up);
+    } else {
+      saveUploadMeta(up, true);
+    }
+    updateUploadItem(up);
+    uploadActive--;
+    setTimeout(pumpUploadQueue, 60);
+  }
 
   xhr.addEventListener('load', function () {
     if (xhr.status >= 200 && xhr.status < 300) {
-      next.status = 'done';
-      next.progress = 1;
+      settle('done', '');
     } else {
-      next.status = 'error';
       var reason = '';
       try { reason = (JSON.parse(xhr.responseText) || {}).error || ''; } catch (e) {}
-      next.error = reason;
-      showToast('Gagal mengunggah ' + next.name + (reason ? ': ' + reason : ''), 'error');
+      showToast('Gagal mengunggah ' + up.name + (reason ? ': ' + reason : ''), 'error');
+      settle('error', reason);
     }
-    updateUploadItem(next);
-    uploadInProgress = false;
-    setTimeout(processUploadQueue, 100);
   });
-
-  xhr.addEventListener('error', function () {
-    next.status = 'error';
-    updateUploadItem(next);
-    uploadInProgress = false;
-    setTimeout(processUploadQueue, 100);
+  xhr.addEventListener('error', function () { settle('error', 'Koneksi terputus'); });
+  xhr.addEventListener('abort', function () {
+    // A reload aborts the XHR; keep the item queued so it resumes on restore.
+    up.status = 'pending';
+    saveUploadMeta(up, true);
+    uploadActive--;
   });
 
   xhr.open('POST', '/api/upload');
+  xhr.setRequestHeader('X-Upload-Id', up.id);
   xhr.send(formData);
+  up._xhr = xhr;
+}
+
+// Retry a failed row without re-picking the file.
+function retryUpload(id) {
+  var up = state.uploads.find(function (u) { return u.id === id; });
+  if (!up || up.status !== 'error') return;
+  up.status = 'pending';
+  up.progress = 0;
+  up.error = '';
+  saveUploadMeta(up, true);
+  showUploadPanel();
+  pumpUploadQueue();
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -2209,20 +2382,8 @@ function bindEvents() {
 
   // Upload panel
   $('upload-panel-close').addEventListener('click', function () { hideUploadPanel(); });
-  var panelCollapsed = false;
   $('upload-panel-toggle').addEventListener('click', function () {
-    panelCollapsed = !panelCollapsed;
-    var items = $('upload-items');
-    var chevron = $('upload-chevron');
-    if (panelCollapsed) {
-      items.style.maxHeight = '0';
-      items.style.padding = '0';
-      chevron.style.transform = 'rotate(180deg)';
-    } else {
-      items.style.maxHeight = '';
-      items.style.padding = '';
-      chevron.style.transform = '';
-    }
+    applyUploadCollapse(!isUploadPanelCollapsed());
   });
 
   // Sync
@@ -2417,6 +2578,7 @@ function init() {
   // teks bawaan di sidebar saat halaman dibuka.
   terapkanBrand();
   bindEvents();
+  applyUploadCollapse(isUploadPanelCollapsed());
 
   // Optimistic preview if user already logged in previously
   var cachedFiles = getCachedFiles();
@@ -2440,6 +2602,7 @@ function init() {
             } else {
               showDashboard();
               loadFiles();
+              restoreUploadQueue();
               checkConnection();
               setInterval(checkConnection, 30000);
             }

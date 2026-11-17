@@ -58,6 +58,17 @@
 .up-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
 .up-name { max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .up-status { font-size: 10px; color: rgb(var(--c-text-muted)); text-align: right; flex-shrink: 0; }
+.up-retry {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: var(--radius-xs);
+  color: rgb(var(--c-danger));
+  font: 600 9px/1.4 var(--mono, ui-monospace);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.up-retry:hover { border-color: rgb(var(--c-danger)); }
 .up-bar { width: 100%; height: 4px; background-color: rgb(var(--c-border)); border-radius: 9999px; overflow: hidden; }
 .up-fill { height: 100%; background-color: rgb(var(--c-accent)); transition: width 0.3s ease, background-color 0.3s ease; }
 
@@ -86,6 +97,18 @@
 }
 #upload-panel-header { cursor: pointer; user-select: none; }
 #upload-items { overflow-y: auto; }
+
+/* Aggregate bar stays visible while the list is collapsed, so a minimized
+   panel still says how far the whole batch has got. */
+.up-global { height: 3px; background: rgb(var(--c-border)); flex: none; }
+.up-global-fill {
+  height: 100%;
+  width: 0;
+  background: rgb(var(--c-accent));
+  transition: width .18s linear, background-color .2s ease;
+}
+#upload-panel.up-collapsed #upload-items { max-height: 0; padding-top: 0; padding-bottom: 0; overflow: hidden; }
+#upload-panel.up-collapsed #upload-chevron { transform: rotate(180deg); }
 
 /* Titik status unggahan. Warna tetap, denyut halus pada opacity saja —
    animate-ping yang lama berdenyut besar dan terbaca seperti kedipan. */

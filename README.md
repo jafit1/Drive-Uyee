@@ -40,6 +40,10 @@ curl -s -b /tmp/drive.cookie http://127.0.0.1:3000/api/files \
 
 The endpoint is idempotent: files that already have a cached thumbnail return immediately.
 
+## Uploads
+
+The browser keeps the upload queue in IndexedDB, including the `File` blobs. A hard refresh restores pending and in-flight items and resumes them automatically; minimizing the panel is persisted in `localStorage`. Three files upload concurrently (`UPLOAD_CONCURRENCY` in `app.js`), and each file uses `TRANSFER_WORKERS` Telegram workers. The panel header always shows completed/total and an aggregate percentage, even while collapsed.
+
 ## Design system
 
 `DESIGN.md` is the visual contract for the project: colour tokens, type scale, spacing, responsive grid, component rules, motion, accessibility and anti-patterns. It is served publicly at `/design.md`, with a live, mobile-first reference page at `/design`.
